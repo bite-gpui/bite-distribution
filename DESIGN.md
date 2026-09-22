@@ -317,14 +317,28 @@ gate builds the git source while consumers get the registry one.
 fork. A hard-coded substitution list would have been wrong for one group or the
 other; the closure scan finds this per target.
 
-**`wgsl-rs` blocks the ce lineage.** It is a non-optional dependency of
+**`wgsl-rs` blocks four of ce's crates.** It is a non-optional dependency of
 `gpui_ce_render`, `gpui_ce_wgpu`, `gpui_ce_apple` and `gpui_ce_windows`, all of
 which are in ce's closure, and cargo refuses to publish a crate whose dependency
-has no version. Options, in preference order: ask upstream to publish; vendor it
-into our namespace as `bite-gp-wgsl-rs` (lib name `wgsl_rs`, so `use` sites are
-unchanged); or publish those four crates only after the rest, which does not
-help since the facade needs them. **This is the one hard blocker in the project
-and it is ce-only** — the zed lineage is unaffected.
+has no version. Only `0.0.0-reserved` exists on crates.io, so there is nothing to
+substitute. Options, in preference order: ask upstream to publish; vendor it into
+our namespace with lib name `wgsl_rs` intact, so `use` sites are unchanged; or
+leave ce unshippable, which is the current state.
+
+What the pipeline does about it is deliberately not "fail":
+
+- **staging withholds the crates and warns.** The tree still builds, because a
+  git dependency resolves locally, so the affected crates are named in the
+  report (`blocked`) and removed from the publish order. Staging succeeds, so CI
+  can check the other twenty-two ce crates instead of stopping at a known
+  blocker. `stage.py --strict` restores the hard failure for anyone who wants it.
+- **the dry run skips what is withheld**, and prints why.
+- **a release refuses.** `publish.py` will not publish a target with withheld
+  crates unless `--allow-partial` is passed deliberately: a release is all of its
+  crates or none of them, and ce's facade depends on the withheld ones.
+
+A branch-level failure that hides twenty-two crates' worth of checking is worse
+than a warning that names four.
 
 One crate reaches outside `crates/`: `perf` lives in `tooling/perf` and is pulled
 in by `util_macros`. It is copied like any other crate and published as
@@ -365,26 +379,43 @@ field) but nothing fails on them.
 ## 10. Gates
 
 Run by `.github/actions/gate/action.yml` against the staged checkout, per
-target, before anything is published:
+target, before anything is published. All of them use `--all-features`: the
+migration project gated the closure with default features and with all of them,
+and only the latter compiles the code behind `bench-support` and `profiler`.
+With default features that code is reported dead, which is how the gate first
+failed — on `gpui_authoring::Window::present_if_needed`, whose only callers are
+in `bench_context` and `profiler::hang`.
 
 1. `targets.py --validate` and `naming.py --verify` — the table is well formed,
-   and every closure crate has a name that no other crate needs (see §12 for
-   where each runs).
+   and every closure crate has a name that no other crate needs (§12).
 2. `cargo metadata --format-version 1` — the whole workspace resolves. Cheap,
    and it is what caught the stale-version rename in §7 step 4.
-3. `cargo check -p <closure> --all-targets` — zero warnings.
-4. `cargo clippy -p <closure> --all-targets -- -D warnings`.
-5. `cargo test -p <closure>`.
-6. `cargo package --list --allow-dirty` for every crate — the file set that
-   would be uploaded, which is where a missing licence or a `build.rs` reading
-   an excluded file shows up.
+3. `cargo check -p <native closure> --all-targets --all-features` — zero warnings.
+4. `cargo clippy -p <native closure> --all-targets --all-features -- -D warnings`.
+5. `cargo test -p <native closure> --all-features`.
+6. `cargo package --list --allow-dirty` for every publishable crate — the file
+   set that would be uploaded, which is where a missing licence or a `build.rs`
+   reading an excluded file shows up.
 7. `publish.py --dry-run` — packages each crate and compiles it in isolation,
    which is the only check that the published artifact builds. `--allow-dirty`
    is required throughout because staging rewrites the tree in place.
 
 The closure is passed as explicit `-p` flags rather than `--workspace`: the
-vendored checkout carries all ~250 zed crates, and checking them is neither
-wanted nor affordable on every push.
+checkout carries all ~250 zed crates, and checking them is neither wanted nor
+affordable on every push. Withheld crates (§8) are still checked — they build,
+they just cannot be published — so the gate covers 55 of the 57 names in the
+union.
+
+**The wasm-only crates are excluded from the native run and are not yet checked
+at all.** `gpui_web` includes its modules under
+`cfg(any(target_family = "wasm", test))` while their dependencies (`gpui_engine`,
+`gpui_platform`) are declared only under the wasm dependency table, so on Linux
+its lib compiles to nothing and its lib *test* target cannot resolve those
+imports. zed's own CI does not check it natively either. A `wasm32-unknown-unknown`
+check is the missing piece; zed's recipe for it is a nightly toolchain with
+`-Zbuild-std` and `-C target-feature=+atomics,+bulk-memory,+mutable-globals`.
+This is the one published crate family the gate does not build, and it is the
+next thing to fix here.
 
 A target that fails any gate is not publishable. Gate failure is per target, so
 `bite_v1.18.x` failing does not hold back `bite_v1.20.2`.
@@ -437,6 +468,12 @@ have different leaf sets.
 `.github/actions/gate/action.yml` is the gate itself, shared by both workflows,
 so "the release workflow runs the same checks as a pull request" holds by
 construction rather than by review.
+
+Both workflows cache the cargo registry and git checkouts under a key built from
+the lockfile, with a shared restore prefix. The first runs spent most of their
+time downloading dependencies, and while different targets have different
+lockfiles — so the *build* cache cannot be shared — the crates they download are
+almost the same.
 
 `.github/workflows/release.yml` — manual `workflow_dispatch` taking the target
 name, a confirmation input that must repeat it, and `dry_run` defaulting to

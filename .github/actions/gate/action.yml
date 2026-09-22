@@ -2,7 +2,14 @@
 #
 # Used by both workflows so that "the release workflow runs the same checks as a
 # pull request" holds by construction rather than by review. The target repo is
-# expected to be checked out and staged before this runs.
+# expected to be checked out, tagged and staged before this runs.
+#
+# Feature set: `--all-features`. The migration project gated the closure twice,
+# once with default features and once with all of them, and only the all-features
+# build compiles the code behind `bench-support` and `profiler`. Checking with
+# default features alone reports that code as dead — which is how this was found,
+# on `gpui_authoring::Window::present_if_needed`, whose only callers are in
+# `bench_context` and `profiler::hang`.
 name: Gate a staged target
 description: Resolve, check, lint, test, package-check and dry-run a staged target
 
@@ -29,11 +36,26 @@ runs:
           libxcb-shape0-dev libxcb-xfixes0-dev libxcb-randr0-dev \
           libxcb-xinput-dev libxkbcommon-x11-dev libfontconfig-dev
 
-    - name: Resolve the closure
-      id: closure
+    - name: Read the stage report
+      id: report
       shell: bash
       working-directory: ${{ inputs.stage }}
-      run: echo "packages=$(python3 "$GITHUB_WORKSPACE/publish.py" --stage . --list)" >> "$GITHUB_OUTPUT"
+      run: |
+        set -euo pipefail
+        # Outputs are appended to $GITHUB_OUTPUT; annotations are printed to
+        # stdout, because a workflow command written into the output file is
+        # just a malformed output value.
+        python3 - <<'PY'
+        import json, os, pathlib
+        report = json.loads(pathlib.Path("dist-stage.json").read_text())
+        with open(os.environ["GITHUB_OUTPUT"], "a") as outputs:
+            outputs.write("native=" + " ".join(report["native"]) + "\n")
+            outputs.write("wasm=" + " ".join(report.get("wasm_only", [])) + "\n")
+        for entry in report.get("blocked", []):
+            print(f"::warning title=withheld::{entry['published']} is withheld: {entry['reason']}")
+        for name in report.get("wasm_only", []):
+            print(f"::notice title=wasm-only::{name} is not checkable natively and is excluded")
+        PY
 
     # Resolving is not compiling, and it is far cheaper: it caught the
     # dependency-version mismatch a rename with a stale version leaves behind,
@@ -47,26 +69,26 @@ runs:
       shell: bash
       working-directory: ${{ inputs.stage }}
       run: |
-        read -ra packages <<< "${{ steps.closure.outputs.packages }}"
+        read -ra packages <<< "${{ steps.report.outputs.native }}"
         args=(); for package in "${packages[@]}"; do args+=(-p "$package"); done
-        cargo check "${args[@]}" --all-targets
+        cargo check "${args[@]}" --all-targets --all-features
 
     - name: Clippy
       shell: bash
       working-directory: ${{ inputs.stage }}
       run: |
-        read -ra packages <<< "${{ steps.closure.outputs.packages }}"
+        read -ra packages <<< "${{ steps.report.outputs.native }}"
         args=(); for package in "${packages[@]}"; do args+=(-p "$package"); done
-        cargo clippy "${args[@]}" --all-targets -- -D warnings
+        cargo clippy "${args[@]}" --all-targets --all-features -- -D warnings
 
     - name: Test
       if: inputs.test == 'true'
       shell: bash
       working-directory: ${{ inputs.stage }}
       run: |
-        read -ra packages <<< "${{ steps.closure.outputs.packages }}"
+        read -ra packages <<< "${{ steps.report.outputs.native }}"
         args=(); for package in "${packages[@]}"; do args+=(-p "$package"); done
-        cargo test "${args[@]}"
+        cargo test "${args[@]}" --all-features
 
     # `--list` is the cheap half of packaging, and it is where a missing licence
     # or a build.rs that reads an excluded file shows up.
@@ -82,6 +104,7 @@ runs:
 
     # The dry run is the closing gate: it packages each crate and compiles it
     # in isolation, which is the only check that the published artifact builds.
+    # Withheld crates are skipped here and refused at release time.
     - name: Publish dry run
       shell: bash
       working-directory: ${{ inputs.stage }}

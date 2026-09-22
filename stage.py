@@ -65,6 +65,15 @@ GIT_SUBSTITUTES = {
 HEADER_RE = re.compile(r"^\[\s*([^\]]+?)\s*\]\s*(?:#.*)?$")
 KEY_RE = re.compile(r"^\s*([A-Za-z0-9_\-]+)\s*(?:\.\s*([A-Za-z0-9_\-]+)\s*)?=")
 
+# Crates whose native build is not a configuration the project supports, so a
+# native check of them proves nothing and their test targets do not build.
+# `gpui_web` includes its modules under `cfg(any(target_family = "wasm", test))`
+# while their dependencies (`gpui_engine`, `gpui_platform`) are declared only
+# under `[target.'cfg(target_family = "wasm")'.dependencies]`, so on Linux the
+# lib compiles to nothing and the lib *test* target cannot resolve those
+# imports. zed's own CI does not check it natively either.
+WASM_ONLY = {"gpui_web"}
+
 
 DEP_TABLES = ("dependencies", "dev-dependencies", "build-dependencies")
 
@@ -371,6 +380,7 @@ def rewrite_dep_specs(lines: list[str], label: str, plan: dict[str, dict], repor
 
 
 def write_notice(crate_dir: Path, target: dict, version: str, license_id: str | None) -> None:
+    """The prominent notice Apache-2.0 §4(b) requires of a modified work."""
     if not (license_id or "").startswith(APACHE):
         return
     notice = crate_dir / "NOTICE"
@@ -392,7 +402,7 @@ def write_notice(crate_dir: Path, target: dict, version: str, license_id: str | 
     )
 
 
-def stage(target: dict, source: Path, report_path: Path | None) -> int:
+def stage(target: dict, source: Path, report_path: Path | None, strict: bool = False) -> int:
     source = source.expanduser().resolve()
     if not (source / "Cargo.toml").exists():
         print(f"FAIL no workspace manifest in {source}", file=sys.stderr)
@@ -407,10 +417,24 @@ def stage(target: dict, source: Path, report_path: Path | None) -> int:
     ).stdout.strip()
     version = targets_mod.version_for(target, source)
     amendment = target.get("amendment", 0)
-    upstream = target.get("upstream") or branch
+    # Empty for a rolling target: it has no upstream release to name itself after.
+    upstream = target.get("upstream", "")
 
     collected = inventory.collect(source)
     crates = collected["crates"]
+    missing_roots = [root for root in target["roots"] if root not in crates]
+    if missing_roots:
+        # Staging rewrites the tree in place, so the usual cause is running it
+        # twice against the same checkout.
+        staged_names = sorted(name for name in crates if name.startswith("bite-"))
+        hint = (
+            f"; the checkout already looks staged ({', '.join(staged_names[:3])}, …), "
+            "so reset it with `git checkout -- . && git clean -fd`"
+            if staged_names
+            else ""
+        )
+        print(f"FAIL {source} has no crate named {', '.join(missing_roots)}{hint}", file=sys.stderr)
+        return 2
     reached = inventory.closure(crates, target["roots"])
     names = sorted(set(reached["normal"]) | set(reached["build"]))
     order = inventory.publish_order(crates, names)
@@ -513,19 +537,44 @@ def stage(target: dict, source: Path, report_path: Path | None) -> int:
     write(root_manifest, root_lines)
 
     problems = verify_staged(source, crates, published, version)
+    blocked: dict[str, str] = {}
+    for entry in report["unresolved_git"]:
+        reason = f"{entry['package']} is a git dependency with no registry version"
+        for crate in entry["needed_by"].split(", "):
+            blocked.setdefault(crate, reason)
+
     report["problems"] = problems
-    report["order"] = [published[name] for name in order]
+    report["blocked"] = [
+        {"package": package, "published": published[package], "reason": reason}
+        for package, reason in sorted(blocked.items())
+    ]
+    report["native"] = [
+        crate["published"] for crate in report["crates"] if crate["original"] not in WASM_ONLY
+    ]
+    report["wasm_only"] = [
+        crate["published"] for crate in report["crates"] if crate["original"] in WASM_ONLY
+    ]
+    report["order"] = [
+        published[name] for name in order if name not in blocked
+    ]
     out = report_path or (source / "dist-stage.json")
     out.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
 
-    if problems or report["unresolved_git"]:
-        for entry in report["unresolved_git"]:
-            print(
-                f"FAIL {entry['package']} is a git dependency with no registry version "
-                f"(in {entry['in']}, as {entry['key']}, needed by {entry['needed_by']}); "
-                "it cannot be published",
-                file=sys.stderr,
-            )
+    # A blocked crate is a publishing limitation, not a staging failure: the
+    # tree still builds (a git dependency resolves locally), so the gate can
+    # check everything and CI stays meaningful. `publish.py` is where the limit
+    # is enforced, and it refuses a release rather than shipping part of one.
+    for entry in report["unresolved_git"]:
+        print(
+            f"WARN {entry['package']} is a git dependency with no registry version "
+            f"(in {entry['in']}, as {entry['key']}), so it cannot be published; "
+            f"withheld: {entry['needed_by']}",
+            file=sys.stderr,
+        )
+    for entry in report["blocked"]:
+        print(f"WARN {entry['published']} is withheld: {entry['reason']}", file=sys.stderr)
+
+    if problems or (strict and report["blocked"]):
         for problem in problems:
             print(f"FAIL {problem}", file=sys.stderr)
         print(f"stage report: {out}", file=sys.stderr)
@@ -537,6 +586,8 @@ def stage(target: dict, source: Path, report_path: Path | None) -> int:
     substituted = sum(1 for r in rewrites if r["kind"] == "substitute")
     print(f"crates   {len(report['crates'])}  dependency rewrites {len(rewrites)} "
           f"({substituted} git substitutions)  licences copied {len(report['licensed'])}")
+    print(f"checks   {len(report['native'])} native, {len(report['wasm_only'])} wasm-only, "
+          f"{len(report['blocked'])} withheld")
     if report["patched_git"]:
         print("patched deps (no manifest edit; the published manifest carries the registry version):")
         for entry in report["patched_git"]:
@@ -571,12 +622,19 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--target", required=True)
     parser.add_argument("--source", required=True, help="a checkout of the target branch")
     parser.add_argument("--report", help="write the stage report here (default: <source>/dist-stage.json)")
+    parser.add_argument("--strict", action="store_true",
+                        help="fail on a withheld crate instead of just reporting it")
     args = parser.parse_args(argv)
 
     declared = {t["name"]: t for t in targets_mod.load()}
     if args.target not in declared:
         raise SystemExit(f"unknown target: {args.target} (see targets.toml)")
-    return stage(declared[args.target], Path(args.source), Path(args.report) if args.report else None)
+    return stage(
+        declared[args.target],
+        Path(args.source),
+        Path(args.report) if args.report else None,
+        strict=args.strict,
+    )
 
 
 if __name__ == "__main__":

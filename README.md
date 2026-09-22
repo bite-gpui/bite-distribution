@@ -110,12 +110,11 @@ The workflows need `SOURCE_READ_TOKEN` if the source repository is private, and
 
 ## Validated so far
 
-Both lineages stage from a realistic CI checkout: `bite_v1.20.2` was cloned at
-`--depth 1` and tags fetched the way the workflow does, then staged to 31 crates
-at `1.20.200` (39 dependency rewrites, 9 git substitutions, 5 licences copied);
-`bite_ce_main` staged to 26 crates with no problems, stopping at the one real
-blocker — `wgsl-rs` has no registry version, so four of its crates cannot be
-published yet (DESIGN §8). That failure is the check working.
+Both lineages stage from a realistic CI checkout. `bite_v1.20.2` was cloned at
+`--depth 1` with tags fetched the way the workflow does, staged to 31 crates at
+`1.20.200` (39 dependency rewrites, 9 git substitutions, 5 licences copied);
+`bite_ce_main` staged to 26 crates, 32 rewrites, reporting 4 withheld rather than
+failing.
 
 Also verified: `cargo metadata` resolves the whole staged workspace; every
 staged package keeps its original lib name (`bite-gpui` exports `gpui`,
@@ -124,14 +123,14 @@ staged package keeps its original lib name (`bite-gpui` exports `gpui`,
 version scheme's edges (amendment bounds, prereleases, patch overflow); and that
 an untagged branch is refused with the exact command to fix it.
 
-Staging found five bugs that a design document would not have: the lib name is
-derived from the package name unless pinned, `collections` already carried a
-version that had to be overridden rather than added, ce declares its path
-dependencies in each member instead of the workspace table,
-`[profile.dev.package]` lists package names that must not be rewritten, and —
-the one that hit CI first — the version cannot be derived from a tag the
-checkout does not have.
+Staging and the gate between them have found six things a design document would
+not have: the lib name is derived from the package name unless pinned,
+`collections` already carried a version that had to be overridden rather than
+added, ce declares its path dependencies in each member instead of the workspace
+table, `[profile.dev.package]` lists package names that must not be rewritten,
+the version cannot be derived from a tag the checkout does not have, and the gate
+was checking with default features where the project checks with all of them.
 
-Not yet run: the compile gates (this host is at 98% disk and a full closure
-build needs tens of GB; CI is the first thing that will run them), and any real
-publish.
+Not yet run: the compile gates locally (this host is at 98% disk and a full
+closure build needs tens of GB — CI runs them), the wasm32 check for `gpui_web`
+(DESIGN §10), and any real publish.

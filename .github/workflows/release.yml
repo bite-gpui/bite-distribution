@@ -82,6 +82,18 @@ jobs:
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           components: clippy
+
+      # See ci.yml: the registry and git caches are shared across targets
+      # because their lockfiles differ but their dependencies do not.
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+          key: cargo-${{ runner.os }}-${{ hashFiles('src/Cargo.lock') }}
+          restore-keys: cargo-${{ runner.os }}-
+
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src -> target

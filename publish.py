@@ -113,10 +113,14 @@ def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--stage", required=True)
     parser.add_argument("--dry-run", action="store_true")
-    parser.add_argument("--list", action="store_true", help="print the publish order and exit")
+    parser.add_argument("--list", metavar="KIND", nargs="?", const="publishable",
+                        choices=["publishable", "native", "wasm", "all"],
+                        help="print package names and exit")
     parser.add_argument("--dirs", action="store_true", help="print the crate directories and exit")
     parser.add_argument("--only", help="publish just this crate (comma-separated)")
     parser.add_argument("--no-verify", action="store_true")
+    parser.add_argument("--allow-partial", action="store_true",
+                        help="publish even though some crates are withheld")
     parser.add_argument("--force", action="store_true",
                         help="attempt versions that already exist instead of skipping them "
                              "(crates.io rejects them; only useful to surface a bump that did not happen)")
@@ -126,15 +130,35 @@ def main(argv: list[str]) -> int:
     data = load_report(stage)
     order = data["order"]
     by_name = {crate["published"]: crate for crate in data["crates"]}
+    withheld = {entry["published"]: entry["reason"] for entry in data.get("blocked", [])}
 
     if args.list:
-        print(" ".join(order))
+        if args.list == "native":
+            print(" ".join(data.get("native", [])))
+        elif args.list == "wasm":
+            print(" ".join(data.get("wasm_only", [])))
+        elif args.list == "all":
+            print(" ".join(crate["published"] for crate in data["crates"]))
+        else:
+            print(" ".join(order))
         return 0
 
     if args.dirs:
         for name in order:
             print(by_name[name]["dir"])
         return 0
+
+    if withheld:
+        for name, reason in sorted(withheld.items()):
+            print(f"withheld: {name}: {reason}", file=sys.stderr)
+        if not args.dry_run and not args.allow_partial:
+            print(
+                f"\nrefusing to publish: {len(withheld)} crates in this release cannot be "
+                "published, and a release is all of its crates or none of them. "
+                "Resolve the dependency above, or pass --allow-partial deliberately.",
+                file=sys.stderr,
+            )
+            return 1
 
     selected = order
     if args.only:
