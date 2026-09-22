@@ -1,0 +1,118 @@
+# Distribution targets.
+#
+# One entry per branch whose crates get published. `lineage` selects the
+# published-name family (see naming.py) and `version_from` the version scheme
+# (see DESIGN.md §6). `roots` are the source packages the closure is walked
+# from; everything else is discovered from the manifests.
+#
+# All ten branches live in one repository, so `url` is the same for all of them;
+# `branch` is what distinguishes a target. Eight of the branches descend from
+# zed releases, the ninth from zed's main, and `bite_ce_main` from the
+# community edition's fork point — shared ancestry, diverged surface, which is
+# exactly why the lineage has to be declared rather than inferred.
+#
+# Private repositories need a read token in CI.
+
+[[target]]
+name = "bite_v1.14.x"
+url = "https://github.com/Vanuan/bite-gpui.git"
+repo = "."
+branch = "bite_v1.14.x"
+lineage = "zed"
+roots = ["gpui", "gpui_parley"]
+# Upstream release the branch is built on; `version_from = "tag"` means the
+# stager re-derives it and fails if the branch moved off the release.
+version_from = "tag"
+version = "1.14.2"
+
+[[target]]
+name = "bite_v1.15.x"
+url = "https://github.com/Vanuan/bite-gpui.git"
+repo = "."
+branch = "bite_v1.15.x"
+lineage = "zed"
+roots = ["gpui", "gpui_parley"]
+version_from = "tag"
+version = "1.15.1"
+
+[[target]]
+name = "bite_v1.16.x"
+url = "https://github.com/Vanuan/bite-gpui.git"
+repo = "."
+branch = "bite_v1.16.x"
+lineage = "zed"
+roots = ["gpui", "gpui_parley"]
+version_from = "tag"
+version = "1.16.3"
+
+[[target]]
+name = "bite_v1.17.x"
+url = "https://github.com/Vanuan/bite-gpui.git"
+repo = "."
+branch = "bite_v1.17.x"
+lineage = "zed"
+roots = ["gpui", "gpui_parley"]
+version_from = "tag"
+version = "1.17.2"
+
+[[target]]
+name = "bite_v1.18.x"
+url = "https://github.com/Vanuan/bite-gpui.git"
+repo = "."
+branch = "bite_v1.18.x"
+lineage = "zed"
+roots = ["gpui", "gpui_parley"]
+version_from = "tag"
+version = "1.18.1"
+
+[[target]]
+name = "bite_v1.19.x"
+url = "https://github.com/Vanuan/bite-gpui.git"
+repo = "."
+branch = "bite_v1.19.x"
+lineage = "zed"
+roots = ["gpui", "gpui_parley"]
+version_from = "tag"
+version = "1.19.2"
+
+[[target]]
+name = "bite_v1.20.2"
+url = "https://github.com/Vanuan/bite-gpui.git"
+repo = "."
+branch = "bite_v1.20.2"
+lineage = "zed"
+roots = ["gpui", "gpui_parley"]
+version_from = "tag"
+version = "1.20.2"
+
+[[target]]
+name = "bite_v1.21.0-pre"
+url = "https://github.com/Vanuan/bite-gpui.git"
+repo = "."
+branch = "bite_v1.21.0-pre"
+lineage = "zed"
+roots = ["gpui", "gpui_parley"]
+version_from = "tag"
+version = "1.21.0-pre"
+
+# Rolling tip. No upstream release tag is reachable from it, so it publishes on
+# the CalVer series instead of borrowing a release number it does not have.
+[[target]]
+name = "bite_master"
+url = "https://github.com/Vanuan/bite-gpui.git"
+repo = ".tools/wt-master"
+branch = "bite_master"
+lineage = "zed"
+roots = ["gpui", "gpui_parley"]
+version_from = "calver"
+
+# The community-edition lineage shares the main repository and publishes the
+# `bite-gp-ce-*` family, with `bite-gpui-ce` as its facade.
+[[target]]
+name = "bite_ce_main"
+url = "https://github.com/Vanuan/bite-gpui.git"
+repo = ".tools/wt-ce"
+branch = "bite_ce_main"
+lineage = "ce"
+roots = ["gpui-ce", "gpui_parley"]
+version_from = "calver"

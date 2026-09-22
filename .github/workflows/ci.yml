@@ -1,0 +1,128 @@
+# Verify a pull request against the target table, the naming rule, and one
+# staged target per lineage.
+#
+# The full ten targets are not verified here. Each one is a cold build of gpui
+# and its backends, so ten of them on every push is hours of CI for a change to
+# a script. `default` is one target per lineage; dispatch with `all` when the
+# change is one that could affect every branch.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      targets:
+        description: 'which targets to stage: default, all, zed, ce, or a comma-separated list'
+        required: false
+        default: default
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+  CARGO_INCREMENTAL: 0
+
+permissions:
+  contents: read
+
+jobs:
+  table:
+    name: target table and naming rule
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Validate the target table
+        run: python3 targets.py --validate
+
+      - name: Resolve the reference branches
+        id: refs
+        # One branch per lineage, which is enough to exercise the naming rule; a
+        # crate that arrives on another branch is caught when that branch is
+        # staged, because stage.py fails on a crate it has no name for.
+        run: python3 targets.py --refs --select default >> "$GITHUB_OUTPUT"
+
+      - name: Check out the source branch
+        uses: actions/checkout@v5
+        with:
+          repository: ${{ steps.refs.outputs.repository }}
+          ref: ${{ steps.refs.outputs.zed }}
+          path: .src/zed
+          token: ${{ secrets.SOURCE_READ_TOKEN || secrets.GITHUB_TOKEN }}
+      - name: Check out the community-edition source
+        uses: actions/checkout@v5
+        with:
+          repository: ${{ steps.refs.outputs.repository }}
+          ref: ${{ steps.refs.outputs.ce }}
+          path: .src/ce
+          token: ${{ secrets.SOURCE_READ_TOKEN || secrets.GITHUB_TOKEN }}
+
+      - name: Verify published names
+        run: |
+          python3 naming.py --verify \
+            --lineage-repo zed=.src/zed \
+            --lineage-repo ce=.src/ce
+
+  plan:
+    needs: table
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.matrix.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - id: matrix
+        run: |
+          matrix="$(python3 targets.py --matrix --select '${{ inputs.targets || 'default' }}')"
+          echo "$matrix"
+          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
+
+  stage:
+    name: ${{ matrix.target }}
+    needs: plan
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/checkout@v5
+        with:
+          repository: ${{ matrix.repository }}
+          ref: ${{ matrix.branch }}
+          path: src
+          token: ${{ secrets.SOURCE_READ_TOKEN || secrets.GITHUB_TOKEN }}
+
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src -> target
+          key: ${{ matrix.target }}
+
+      - name: Stage
+        run: python3 stage.py --target '${{ matrix.target }}' --source src
+
+      - uses: ./.github/actions/gate
+        with:
+          stage: src
+
+      - name: Keep the stage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage-${{ matrix.target }}
+          path: src/dist-stage.json
+          if-no-files-found: ignore

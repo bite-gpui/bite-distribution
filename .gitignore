@@ -1,0 +1,11 @@
+# Staged checkouts and stage reports. A staged tree is a mutated worktree of a
+# target branch and is rebuilt from the branch on every run; it is never a
+# source of truth and never needs committing.
+stage/
+wt/
+
+# Reports from a local publish dry run.
+dist-stage.json
+
+__pycache__/
+*.pyc

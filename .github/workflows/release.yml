@@ -1,0 +1,134 @@
+# Publish one target's crates to crates.io.
+#
+# Manual by default. crates.io versions are immutable, so a release is not
+# something to trigger from a branch push until the scheme has been proven by
+# dry runs; `dry_run` therefore defaults to true and the real path has to be
+# asked for explicitly. Once a target's dry runs are trustworthy, add a push
+# trigger for its branch alongside the dispatch.
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: 'target name from targets.toml (e.g. bite_v1.20.2)'
+        required: true
+      confirm:
+        description: 'repeat the target name to confirm the publish'
+        required: true
+      dry_run:
+        description: 'package and verify without uploading'
+        type: boolean
+        required: false
+        default: true
+
+# Stable and preview uploads share one crates.io namespace, and the eight
+# release targets share crate names, so two releases must never overlap.
+concurrency:
+  group: registry-publish
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+permissions:
+  contents: read
+
+jobs:
+  prepare:
+    name: resolve the target
+    runs-on: ubuntu-latest
+    outputs:
+      repository: ${{ steps.resolve.outputs.repository }}
+      branch: ${{ steps.resolve.outputs.branch }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Refuse an unconfirmed publish
+        if: inputs.dry_run == false && inputs.confirm != inputs.target
+        run: |
+          echo "confirm (${{ inputs.confirm }}) does not match target (${{ inputs.target }})" >&2
+          exit 1
+
+      - id: resolve
+        run: |
+          set -euo pipefail
+          python3 targets.py --env '${{ inputs.target }}' >> "$GITHUB_OUTPUT"
+          echo "resolved ${{ inputs.target }}"
+
+  gate:
+    needs: prepare
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/checkout@v5
+        with:
+          repository: ${{ needs.prepare.outputs.repository }}
+          ref: ${{ needs.prepare.outputs.branch }}
+          path: src
+          token: ${{ secrets.SOURCE_READ_TOKEN || secrets.GITHUB_TOKEN }}
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src -> target
+          key: ${{ inputs.target }}
+
+      - name: Stage
+        run: python3 stage.py --target '${{ inputs.target }}' --source src
+
+      - name: Record the version being released
+        id: version
+        run: |
+          version="$(python3 -c "import json;print(json.load(open('src/dist-stage.json'))['version'])")"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "::notice title=${{ inputs.target }}::publishing ${{ inputs.target }} $version"
+
+      - uses: ./.github/actions/gate
+        with:
+          stage: src
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: stage-${{ inputs.target }}
+          path: src/dist-stage.json
+
+  publish:
+    needs: [gate, prepare]
+    if: inputs.dry_run == false
+    runs-on: ubuntu-latest
+    # Approval gate, and where CARGO_REGISTRY_TOKEN lives. Configure the
+    # environment with required reviewers before the first real publish.
+    environment: crates-io
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/checkout@v5
+        with:
+          repository: ${{ needs.prepare.outputs.repository }}
+          ref: ${{ needs.prepare.outputs.branch }}
+          path: src
+          token: ${{ secrets.SOURCE_READ_TOKEN || secrets.GITHUB_TOKEN }}
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src -> target
+          key: ${{ inputs.target }}
+
+      - name: Stage
+        run: python3 stage.py --target '${{ inputs.target }}' --source src
+
+      # Deliberately not the gate action: the gate already ran on this commit,
+      # and re-running tests here would hold the registry lock for the length of
+      # a full build. The dry run below is the part that must see the exact
+      # artifacts being uploaded.
+      - name: Publish
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: python3 publish.py --stage src

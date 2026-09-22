@@ -1,0 +1,88 @@
+# The gate a target must pass before any of its crates is published.
+#
+# Used by both workflows so that "the release workflow runs the same checks as a
+# pull request" holds by construction rather than by review. The target repo is
+# expected to be checked out and staged before this runs.
+name: Gate a staged target
+description: Resolve, check, lint, test, package-check and dry-run a staged target
+
+inputs:
+  stage:
+    description: path to the staged checkout (the tree stage.py mutated in place)
+    required: true
+  test:
+    description: run the closure's tests
+    required: false
+    default: 'true'
+
+runs:
+  using: composite
+  steps:
+    # The list ce's own publish job installs: enough for the closure, without
+    # the webkit/gtk stack only the editor crates need.
+    - name: Install system dependencies
+      shell: bash
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          libxkbcommon-dev libwayland-dev libx11-dev \
+          libxcb-shape0-dev libxcb-xfixes0-dev libxcb-randr0-dev \
+          libxcb-xinput-dev libxkbcommon-x11-dev libfontconfig-dev
+
+    - name: Resolve the closure
+      id: closure
+      shell: bash
+      working-directory: ${{ inputs.stage }}
+      run: echo "packages=$(python3 "$GITHUB_WORKSPACE/publish.py" --stage . --list)" >> "$GITHUB_OUTPUT"
+
+    # Resolving is not compiling, and it is far cheaper: it caught the
+    # dependency-version mismatch a rename with a stale version leaves behind,
+    # across the whole workspace, in seconds.
+    - name: Resolve the workspace
+      shell: bash
+      working-directory: ${{ inputs.stage }}
+      run: cargo metadata --format-version 1 > /dev/null
+
+    - name: Check
+      shell: bash
+      working-directory: ${{ inputs.stage }}
+      run: |
+        read -ra packages <<< "${{ steps.closure.outputs.packages }}"
+        args=(); for package in "${packages[@]}"; do args+=(-p "$package"); done
+        cargo check "${args[@]}" --all-targets
+
+    - name: Clippy
+      shell: bash
+      working-directory: ${{ inputs.stage }}
+      run: |
+        read -ra packages <<< "${{ steps.closure.outputs.packages }}"
+        args=(); for package in "${packages[@]}"; do args+=(-p "$package"); done
+        cargo clippy "${args[@]}" --all-targets -- -D warnings
+
+    - name: Test
+      if: inputs.test == 'true'
+      shell: bash
+      working-directory: ${{ inputs.stage }}
+      run: |
+        read -ra packages <<< "${{ steps.closure.outputs.packages }}"
+        args=(); for package in "${packages[@]}"; do args+=(-p "$package"); done
+        cargo test "${args[@]}"
+
+    # `--list` is the cheap half of packaging, and it is where a missing licence
+    # or a build.rs that reads an excluded file shows up.
+    - name: Package file sets
+      shell: bash
+      working-directory: ${{ inputs.stage }}
+      run: |
+        set -euo pipefail
+        while read -r dir; do
+          echo "--- $dir"
+          cargo package --list --allow-dirty --manifest-path "$dir/Cargo.toml"
+        done < <(python3 "$GITHUB_WORKSPACE/publish.py" --stage . --dirs)
+
+    # The dry run is the closing gate: it packages each crate and compiles it
+    # in isolation, which is the only check that the published artifact builds.
+    - name: Publish dry run
+      shell: bash
+      working-directory: ${{ inputs.stage }}
+      run: python3 "$GITHUB_WORKSPACE/publish.py" --stage . --dry-run
