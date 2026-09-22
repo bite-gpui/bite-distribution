@@ -58,18 +58,22 @@ alternative we rejected and why.
 Ten targets, one per branch. `.dist/targets.toml` is the source of truth and
 `.dist/naming.py --verify` checks it against the manifests.
 
-| target | lineage | publishes as | version |
-| --- | --- | --- | --- |
-| `bite_v1.14.x` | zed | `bite-gp-*` | `1.14.2` |
-| `bite_v1.15.x` | zed | `bite-gp-*` | `1.15.1` |
-| `bite_v1.16.x` | zed | `bite-gp-*` | `1.16.3` |
-| `bite_v1.17.x` | zed | `bite-gp-*` | `1.17.2` |
-| `bite_v1.18.x` | zed | `bite-gp-*` | `1.18.1` |
-| `bite_v1.19.x` | zed | `bite-gp-*` | `1.19.2` |
-| `bite_v1.20.2` | zed | `bite-gp-*` | `1.20.2` |
-| `bite_v1.21.0-pre` | zed | `bite-gp-*` | `1.21.0-pre` |
-| `bite_master` | zed | `bite-gp-*` | CalVer |
-| `bite_ce_main` | ce | `bite-gp-ce-*`, `bite-gpui-ce` | CalVer |
+| target | lineage | publishes as | upstream | tag | publishes |
+| --- | --- | --- | --- | --- | --- |
+| `bite_v1.14.x` | zed | `bite-gp-*` | `1.14.2` | `bite_1.14.200` | `1.14.200` |
+| `bite_v1.15.x` | zed | `bite-gp-*` | `1.15.1` | `bite_1.15.100` | `1.15.100` |
+| `bite_v1.16.x` | zed | `bite-gp-*` | `1.16.3` | `bite_1.16.300` | `1.16.300` |
+| `bite_v1.17.x` | zed | `bite-gp-*` | `1.17.2` | `bite_1.17.200` | `1.17.200` |
+| `bite_v1.18.x` | zed | `bite-gp-*` | `1.18.1` | `bite_1.18.100` | `1.18.100` |
+| `bite_v1.19.x` | zed | `bite-gp-*` | `1.19.2` | `bite_1.19.200` | `1.19.200` |
+| `bite_v1.20.2` | zed | `bite-gp-*` | `1.20.2` | `bite_1.20.200` | `1.20.200` |
+| `bite_v1.21.0-pre` | zed | `bite-gp-*` | `1.21.0-pre` | `bite_1.21.0-pre` | `1.21.0-pre` |
+| `bite_master` | zed | `bite-gp-*` | — | — | CalVer |
+| `bite_ce_main` | ce | `bite-gp-ce-*`, `bite-gpui-ce` | — | — | CalVer |
+
+`upstream` is the zed release a branch retargets, recorded for provenance; the
+released version is derived from it and declared by the branch's tag (§6).
+`targets.py --tags` prints the tag each selected target must carry.
 
 All ten live in one repository, `git@github.com:Vanuan/bite-gpui.git`. They share
 a common ancestor — ce is a fork of zed, not a separate lineage — but they have
@@ -81,15 +85,6 @@ release. One repository also means the workflows need a read token for one
 repository, and the naming check needs two checkouts of it at two refs rather
 than checkouts of two repositories.
 
-The release versions in that table are measured, not assumed: each is the
-highest semver-ordered `v1.*` tag reachable from the branch, i.e. the upstream
-zed release the branch is built on. They are reachable only from the release
-line — zed cuts `v1.21.x` as a release branch, so `upstream/v1.21.0-pre` is not
-an ancestor of `origin/main`, and `bite_master` has no release tag at all.
-Sorted with `sort -V` this gets `v1.14.2` wrong (it prefers `v1.14.2-pre`), so
-the stager derives versions with semver ordering and fails if a branch has moved
-onto a different release.
-
 Every published crate records its origin in the manifest, so a consumer can tell
 what they actually got:
 
@@ -98,7 +93,9 @@ what they actually got:
 source = "https://github.com/Vanuan/bite-gpui"
 branch = "bite_v1.20.2"
 commit = "<sha>"
-upstream = "v1.20.2"
+upstream = "1.20.2"
+amendment = 0
+original = "gpui"
 ```
 
 ## 4. Which crates
@@ -178,30 +175,65 @@ continuing to compile.
 
 ## 6. Versions
 
-**Release targets publish the upstream release number.** `bite_v1.20.2`
-publishes `1.20.2`; the version says which zed release was rearchitected, which
-is the single most useful fact a consumer can have. `gpui-unofficial` reached
-`1.20.2` stable / `1.21.0-pre` newest on the same scheme, so the ecosystem
-already reads versions this way.
+Each upstream patch release gets **a hundred slots**. `1.20.2` publishes as
+`1.20.200`; amendments to the same retarget take 201..299; `1.20.3` starts at
+300. The gap is the point — an amendment can never collide with the next
+release, versions still sort in upstream order, and no retarget will need
+anything close to a hundred amendments. `targets.py` refuses a table that does
+not fit the scheme (an upstream patch of 100 or more, an amendment outside
+0..99).
 
-`1.21.0-pre` is a prerelease and stays one. Cargo will only select it for a
-requirement that itself carries a prerelease (`=1.21.0-pre`), which is the
-correct behaviour for a preview branch.
+**The version comes from a tag on our branch, not from zed's tag.** Every
+release target's tip carries an annotated tag named `bite_` plus the published
+version:
+
+| branch | tag | publishes |
+| --- | --- | --- |
+| `bite_v1.14.x` | `bite_1.14.200` | `1.14.200` |
+| `bite_v1.20.2` | `bite_1.20.200` | `1.20.200` |
+| `bite_v1.21.0-pre` | `bite_1.21.0-pre` | `1.21.0-pre` |
+
+This replaced an earlier design that derived the version from the upstream
+`v1.20.2` tag's presence on the branch's ancestry. That failed in CI for a real
+reason worth recording: `actions/checkout` fetches neither tags nor history at
+the default depth, so the tag was simply absent, and even with
+`fetch-depth: 0` the derivation would have needed the full history of a zed-sized
+fork on every job. A tag **at the tip** needs no history at all — `git tag
+--points-at HEAD` compares OIDs — so a depth-1 checkout suffices and the
+workflow fetches only `refs/tags/bite_*`.
+
+Three consequences, all deliberate:
+
+- **A release target must be tagged to be staged.** The failure names the
+  command to run: `git tag -a bite_1.20.201 -m bite_1.20.201`. Pushing a commit
+  to a release branch therefore invalidates CI until the branch is re-tagged,
+  which is the discipline that keeps the version a contract rather than a
+  label: content cannot change without the version changing.
+- **The tag is the version**, so nothing derives it at resolve time beyond the
+  table's `upstream` and `amendment`. To release new content for an upstream
+  release that is already published, bump `amendment`, push the commit, tag it.
+- **The branch name is checked against the table without any git at all.**
+  `bite_v1.20.2` must declare `1.20.2`; `bite_v1.14.x` may leave the patch open
+  but must agree on `1.14`. `targets.py --validate` runs this, so a typo is
+  caught in the `table` job in seconds.
+
+`1.21.0-pre` keeps its prerelease tag, because the release it previews is what
+`1.21.0` will be; an amendment appends a numeric identifier (`1.21.0-pre.1`),
+which semver orders above the bare prerelease.
 
 **Rolling targets use CalVer: `0.YYYYMMDD.N`.** Neither `bite_master` nor
-`bite_ce_main` has an upstream release to name itself after. `N` disambiguates
-two stages in one day.
+`bite_ce_main` has a release to name itself after, and a date-shaped tag would
+have to be pushed daily just to keep CI green, so these derive from the date and
+publish untagged. `N` is the amendment slot. The `0.*` rolling series and the
+`1.*` release series coexist on the same crate name, which is deliberate: a
+requirement like `bite-gpui = "1.20"` never silently resolves to a master
+snapshot. The cost is that `*` prefers a release over the tip — see §13.3.
 
 ce has a scheme of its own in flight — its prerelease workflow publishes
 `<committed major + 1>.0.0-alpha.N`, so `gpui-ce` is on the `1.0.0-alpha.N` line
 while its committed version is 0.2.2. Because the two lineages do not share
 crate names (§5, §13.2), this project does not have to interoperate with it,
 and does not.
-
-The `0.*` rolling series and the `1.*` release series coexist on the same crate
-name, which is deliberate: a requirement like `bite-gpui = "1.20"` never
-silently resolves to a master snapshot. The cost is that `*` prefers a release
-over the tip — see §13.3.
 
 ## 7. Staging algorithm
 
@@ -221,7 +253,7 @@ it keeps cargo itself as the source of truth.
 1. **Materialize** a checkout of the branch tip (CI checks the branch out
    directly; locally, `git worktree add --detach .dist/wt/<target> <branch>`).
 2. **Measure** the closure with `inventory.py`, and resolve the version from the
-   upstream release tag reachable from `HEAD` (§6).
+   release tag at the branch tip (§6).
 3. **Rename** each closure crate's `[package] name` — and **pin `[lib] name`**.
    These crates declare `[lib] path` without a name, so their lib name is
    *derived from the package name*. Without this step `bite-gpui` exports crate

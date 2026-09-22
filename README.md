@@ -52,7 +52,7 @@ being released.
 | `targets.toml` | the ten target branches, their lineage, version scheme and URLs |
 | `inventory.py` | resolves a checkout's in-path dependency closure, and the publish order |
 | `naming.py` | source package → published crate name; `--verify` checks it per target |
-| `targets.py` | validates and selects targets; emits the CI matrix and `--env` lines |
+| `targets.py` | validates and selects targets; `--tags` says what to tag; `--matrix` and `--env` feed CI |
 | `stage.py` | carves a target into a publishable state |
 | `publish.py` | publishes a staged target in dependency order |
 
@@ -65,6 +65,9 @@ closure needs replaced.
 # what would be published for this branch?
 python3 inventory.py --repo . --root gpui --root gpui_parley --summary
 
+# every target, and the tag its branch must carry
+python3 targets.py --tags --select all
+
 # every target's closure, with names and collisions checked
 python3 naming.py --verify --lineage-repo zed=. --lineage-repo ce=.tools/wt-ce
 
@@ -72,11 +75,23 @@ python3 naming.py --verify --lineage-repo zed=. --lineage-repo ce=.tools/wt-ce
 python3 naming.py --table
 
 # stage a branch and see what it produced
-git -C .. worktree add --detach wt/bite_v1.20.2 bite_v1.20.2
-python3 stage.py --target bite_v1.20.2 --source wt/bite_v1.20.2
-python3 publish.py --stage wt/bite_v1.20.2 --list
-python3 publish.py --stage wt/bite_v1.20.2 --dry-run
+python3 stage.py --target bite_v1.20.2 --source src
+python3 publish.py --stage src --list
+python3 publish.py --stage src --dry-run
 ```
+
+## Releasing
+
+The version is the version the branch tip is **tagged** with, so a release is:
+
+```sh
+python3 targets.py --tags --select default      # what the tag should be called
+git tag -a bite_1.20.200 -m bite_1.20.200 && git push origin bite_1.20.200
+```
+
+Staging refuses to run for a release target whose tip is untagged, and names the
+command. That is deliberate: a commit on a release branch cannot ship without the
+version changing, and the version is what a consumer pins.
 
 ## CI
 
@@ -95,23 +110,28 @@ The workflows need `SOURCE_READ_TOKEN` if the source repository is private, and
 
 ## Validated so far
 
-`bite_v1.21.0-pre` was staged end to end: 31 crates, 39 dependency rewrites (9 of
-them git substitutions), 5 licences copied, one patched dependency; `cargo
-metadata` resolved the whole workspace; every staged package kept its original
-lib name (`bite-gpui` exports `gpui`, `bite-gp-platform` exports `gpui_platform`,
-`bite-gp-util` exports `util`, `bite-gp-gpui-util` exports `gpui_util`); and
-`publish.py --dry-run` packaged and compiled a leaf crate in isolation.
+Both lineages stage from a realistic CI checkout: `bite_v1.20.2` was cloned at
+`--depth 1` and tags fetched the way the workflow does, then staged to 31 crates
+at `1.20.200` (39 dependency rewrites, 9 git substitutions, 5 licences copied);
+`bite_ce_main` staged to 26 crates with no problems, stopping at the one real
+blocker — `wgsl-rs` has no registry version, so four of its crates cannot be
+published yet (DESIGN §8). That failure is the check working.
 
-`bite_ce_main` was staged too: 26 crates, 32 dependency rewrites, no problems.
-It stops at the one real blocker — `wgsl-rs` has no registry version, so four of
-its crates cannot be published yet (DESIGN §8). That failure is the check
-working, not a defect.
+Also verified: `cargo metadata` resolves the whole staged workspace; every
+staged package keeps its original lib name (`bite-gpui` exports `gpui`,
+`bite-gp-platform` exports `gpui_platform`, `bite-gp-util` exports `util`);
+`publish.py --dry-run` packages and compiles a leaf crate in isolation; the
+version scheme's edges (amendment bounds, prereleases, patch overflow); and that
+an untagged branch is refused with the exact command to fix it.
 
-Staging found four bugs that a design document would not have: the lib name is
+Staging found five bugs that a design document would not have: the lib name is
 derived from the package name unless pinned, `collections` already carried a
 version that had to be overridden rather than added, ce declares its path
-dependencies in each member instead of the workspace table, and
-`[profile.dev.package]` lists package names that must not be rewritten.
+dependencies in each member instead of the workspace table,
+`[profile.dev.package]` lists package names that must not be rewritten, and —
+the one that hit CI first — the version cannot be derived from a tag the
+checkout does not have.
 
-Not yet run: the gate on a branch that has never been staged, and any real
+Not yet run: the compile gates (this host is at 98% disk and a full closure
+build needs tens of GB; CI is the first thing that will run them), and any real
 publish.

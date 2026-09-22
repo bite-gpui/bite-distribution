@@ -104,6 +104,13 @@ jobs:
           path: src
           token: ${{ secrets.SOURCE_READ_TOKEN || secrets.GITHUB_TOKEN }}
 
+      # The published version is the version the branch tip is tagged with, so a
+      # depth-1 checkout is enough — but the tags still have to be fetched, and
+      # fetching only ours keeps it small.
+      - name: Fetch the release tags
+        working-directory: src
+        run: git fetch --force origin '+refs/tags/bite_*:refs/tags/bite_*'
+
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           components: clippy

@@ -14,7 +14,7 @@ What gets rewritten, and why each is needed for `cargo publish` to accept the
 crate:
 
 - `[package] name` -> the published name (naming.py), `[lib] name` untouched;
-- `[package] version` -> the target version, from the upstream release tag;
+- `[package] version` -> the version the branch's release tag names (§6);
 - crate-level `publish = false` removed, workspace default raised to true
   (zed's root sets `publish = false`, which 11 of the 1.14 closure inherit);
 - `[workspace.dependencies]` entries for closure crates gain `package` and
@@ -406,7 +406,8 @@ def stage(target: dict, source: Path, report_path: Path | None) -> int:
         capture_output=True, text=True,
     ).stdout.strip()
     version = targets_mod.version_for(target, source)
-    upstream = version if target.get("version_from", "tag") == "tag" else branch
+    amendment = target.get("amendment", 0)
+    upstream = target.get("upstream") or branch
 
     collected = inventory.collect(source)
     crates = collected["crates"]
@@ -488,6 +489,7 @@ def stage(target: dict, source: Path, report_path: Path | None) -> int:
             f"branch = {json.dumps(target['branch'])}\n"
             f"commit = {json.dumps(commit)}\n"
             f"upstream = {json.dumps(upstream)}\n"
+            f"amendment = {amendment}\n"
             f"original = {json.dumps(package)}\n"
         )
         write(manifest, lines)
@@ -530,7 +532,7 @@ def stage(target: dict, source: Path, report_path: Path | None) -> int:
         return 1
 
     print(f"target   {target['name']} ({target['branch']} @ {commit[:12]})")
-    print(f"version  {version}")
+    print(f"version  {version}  (upstream {upstream}, amendment {amendment})")
     rewrites = report["rewrites"]
     substituted = sum(1 for r in rewrites if r["kind"] == "substitute")
     print(f"crates   {len(report['crates'])}  dependency rewrites {len(rewrites)} "

@@ -5,6 +5,12 @@
 # (see DESIGN.md §6). `roots` are the source packages the closure is walked
 # from; everything else is discovered from the manifests.
 #
+# `version` is the upstream release a branch retargets. The version that gets
+# published is derived from it, not equal to it: `1.20.2` publishes as
+# `1.20.200`, leaving 201..299 for amendments to the same upstream patch and 300
+# onwards for the next one. Bump `amendment` when new content has to ship for an
+# upstream release that is already published.
+#
 # All ten branches live in one repository, so `url` is the same for all of them;
 # `branch` is what distinguishes a target. Eight of the branches descend from
 # zed releases, the ninth from zed's main, and `bite_ce_main` from the
@@ -22,8 +28,8 @@ lineage = "zed"
 roots = ["gpui", "gpui_parley"]
 # Upstream release the branch is built on; `version_from = "tag"` means the
 # stager re-derives it and fails if the branch moved off the release.
-version_from = "tag"
-version = "1.14.2"
+version_from = "release-tag"
+upstream = "1.14.2"
 
 [[target]]
 name = "bite_v1.15.x"
@@ -32,8 +38,8 @@ repo = "."
 branch = "bite_v1.15.x"
 lineage = "zed"
 roots = ["gpui", "gpui_parley"]
-version_from = "tag"
-version = "1.15.1"
+version_from = "release-tag"
+upstream = "1.15.1"
 
 [[target]]
 name = "bite_v1.16.x"
@@ -42,8 +48,8 @@ repo = "."
 branch = "bite_v1.16.x"
 lineage = "zed"
 roots = ["gpui", "gpui_parley"]
-version_from = "tag"
-version = "1.16.3"
+version_from = "release-tag"
+upstream = "1.16.3"
 
 [[target]]
 name = "bite_v1.17.x"
@@ -52,8 +58,8 @@ repo = "."
 branch = "bite_v1.17.x"
 lineage = "zed"
 roots = ["gpui", "gpui_parley"]
-version_from = "tag"
-version = "1.17.2"
+version_from = "release-tag"
+upstream = "1.17.2"
 
 [[target]]
 name = "bite_v1.18.x"
@@ -62,8 +68,8 @@ repo = "."
 branch = "bite_v1.18.x"
 lineage = "zed"
 roots = ["gpui", "gpui_parley"]
-version_from = "tag"
-version = "1.18.1"
+version_from = "release-tag"
+upstream = "1.18.1"
 
 [[target]]
 name = "bite_v1.19.x"
@@ -72,8 +78,8 @@ repo = "."
 branch = "bite_v1.19.x"
 lineage = "zed"
 roots = ["gpui", "gpui_parley"]
-version_from = "tag"
-version = "1.19.2"
+version_from = "release-tag"
+upstream = "1.19.2"
 
 [[target]]
 name = "bite_v1.20.2"
@@ -82,8 +88,8 @@ repo = "."
 branch = "bite_v1.20.2"
 lineage = "zed"
 roots = ["gpui", "gpui_parley"]
-version_from = "tag"
-version = "1.20.2"
+version_from = "release-tag"
+upstream = "1.20.2"
 
 [[target]]
 name = "bite_v1.21.0-pre"
@@ -92,8 +98,8 @@ repo = "."
 branch = "bite_v1.21.0-pre"
 lineage = "zed"
 roots = ["gpui", "gpui_parley"]
-version_from = "tag"
-version = "1.21.0-pre"
+version_from = "release-tag"
+upstream = "1.21.0-pre"
 
 # Rolling tip. No upstream release tag is reachable from it, so it publishes on
 # the CalVer series instead of borrowing a release number it does not have.
