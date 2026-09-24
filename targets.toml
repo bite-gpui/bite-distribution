@@ -31,6 +31,10 @@ roots = ["gpui", "gpui_parley"]
 # stager re-derives it and fails if the branch moved off the release.
 version_from = "release-tag"
 upstream = "1.14.2"
+# `gpui_parley` reached outside its own directory for the fonts it embeds, so
+# the tarball it packaged could not be compiled back; the next amendment is the
+# price of new content on a release branch (DESIGN §6).
+amendment = 1
 
 [[target]]
 name = "bite_v1.15.x"
@@ -40,6 +44,10 @@ lineage = "zed"
 roots = ["gpui", "gpui_parley"]
 version_from = "release-tag"
 upstream = "1.15.1"
+# `gpui_parley` reached outside its own directory for the fonts it embeds, so
+# the tarball it packaged could not be compiled back; the next amendment is the
+# price of new content on a release branch (DESIGN §6).
+amendment = 1
 
 [[target]]
 name = "bite_v1.16.x"
@@ -49,6 +57,10 @@ lineage = "zed"
 roots = ["gpui", "gpui_parley"]
 version_from = "release-tag"
 upstream = "1.16.3"
+# `gpui_parley` reached outside its own directory for the fonts it embeds, so
+# the tarball it packaged could not be compiled back; the next amendment is the
+# price of new content on a release branch (DESIGN §6).
+amendment = 1
 
 [[target]]
 name = "bite_v1.17.x"
@@ -58,6 +70,10 @@ lineage = "zed"
 roots = ["gpui", "gpui_parley"]
 version_from = "release-tag"
 upstream = "1.17.2"
+# `gpui_parley` reached outside its own directory for the fonts it embeds, so
+# the tarball it packaged could not be compiled back; the next amendment is the
+# price of new content on a release branch (DESIGN §6).
+amendment = 1
 
 [[target]]
 name = "bite_v1.18.x"
@@ -67,6 +83,10 @@ lineage = "zed"
 roots = ["gpui", "gpui_parley"]
 version_from = "release-tag"
 upstream = "1.18.1"
+# `gpui_parley`'s fonts reached outside its crate, and the `gpui_authoring` tests
+# that share the process-global trace state raced; the next amendment is the price
+# of new content on a release branch (DESIGN §6).
+amendment = 1
 
 [[target]]
 name = "bite_v1.19.x"
@@ -76,6 +96,10 @@ lineage = "zed"
 roots = ["gpui", "gpui_parley"]
 version_from = "release-tag"
 upstream = "1.19.2"
+# `gpui_parley`'s fonts reached outside its crate, and the `gpui_authoring` tests
+# that share the process-global trace state raced; the next amendment is the price
+# of new content on a release branch (DESIGN §6).
+amendment = 1
 
 [[target]]
 name = "bite_v1.20.2"
@@ -100,6 +124,10 @@ lineage = "zed"
 roots = ["gpui", "gpui_parley"]
 version_from = "release-tag"
 upstream = "1.21.0-pre"
+# `gpui_parley`'s fonts reached outside its crate, and the `gpui_authoring` tests
+# that share the process-global trace state raced; the next amendment is the price
+# of new content on a release branch (DESIGN §6).
+amendment = 1
 
 # Rolling tip. No upstream release tag is reachable from it, so it publishes on
 # the CalVer series instead of borrowing a release number it does not have.
