@@ -125,7 +125,14 @@ leaf crate in isolation; the version scheme's edges (amendment bounds,
 prereleases, patch overflow); and that an untagged branch is refused with the
 exact command to fix it.
 
-Staging and the gate between them have found seven things a design document
+The gate has also found a real source defect and it is fixed on the branch:
+ce's `gpui_wgpu` example called `Bounds::centered` without the `BoundsExt` trait
+in scope, which every other example gets through gpui's prelude. It is ce-only —
+those examples do not exist on the zed-lineage branches. A rolling branch pays
+nothing for a source fix; a tagged release branch pays an amendment bump and a
+new tag (DESIGN §6).
+
+Staging and the gate between them have found eight things a design document
 would not have: the lib name is derived from the package name unless pinned,
 `collections` already carried a version that had to be overridden rather than
 added, ce declares its path dependencies in each member instead of the workspace

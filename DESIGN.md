@@ -216,6 +216,14 @@ Three consequences, all deliberate:
   `bite_v1.20.2` must declare `1.20.2`; `bite_v1.14.x` may leave the patch open
   but must agree on `1.14`. `targets.py --validate` runs this, so a typo is
   caught in the `table` job in seconds.
+- **Fixing the source costs a version bump on a release branch.** A new commit
+  moves the tip, the tag no longer points at it, and staging refuses until the
+  branch is re-tagged: the fix is `amendment += 1`, push, tag. Rolling targets
+  pay nothing, because they are dated at staging time. That is the intended
+  price of the version being a contract rather than a label, and it is the thing
+  to weigh when the gate finds a source-level defect. ce's broken example was
+  worth fixing under a rolling branch, where it cost nothing; the same fix on a
+  release branch would want to be certain, because it is nine tags.
 
 `1.21.0-pre` keeps its prerelease tag, because the release it previews is what
 `1.21.0` will be; an amendment appends a numeric identifier (`1.21.0-pre.1`),
