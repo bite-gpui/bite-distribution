@@ -39,8 +39,21 @@ DEFAULT = ("bite_v1.20.2", "bite_ce_main")
 
 
 def load() -> list[dict]:
+    """The target table, with the repository default filled in.
+
+    Named once at the top level because every target shares it; materialising it
+    per target means every reader downstream still sees a concrete `url`.
+    """
     with TARGETS_FILE.open("rb") as handle:
-        return tomllib.load(handle)["target"]
+        table = tomllib.load(handle)
+    default = table.get("repository")
+    for target in table["target"]:
+        if target.get("url"):
+            continue
+        if not default:
+            raise SystemExit(f"{target.get('name')}: no url, and no top-level repository")
+        target["url"] = default
+    return table["target"]
 
 
 def validate(targets: list[dict]) -> list[str]:

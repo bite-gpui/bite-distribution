@@ -8,7 +8,7 @@ lineage) and `bite-gpui-ce` / `bite-gp-ce-*` (community-edition lineage).
 The design is in [DESIGN.md](DESIGN.md). Read §13 of it first — it lists the
 decisions still open, one of which has legal weight.
 
-All ten target branches live in one repository, `Vanuan/bite-gpui`: eight
+All ten target branches live in one repository, `bite-gpui/bite-gpui`: eight
 descend from zed releases, `bite_master` from zed's main, and `bite_ce_main`
 from the community edition's fork point. They share an ancestor but have
 diverged, so each target declares its lineage rather than having it inferred

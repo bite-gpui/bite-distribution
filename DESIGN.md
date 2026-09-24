@@ -75,7 +75,7 @@ Ten targets, one per branch. `.dist/targets.toml` is the source of truth and
 released version is derived from it and declared by the branch's tag (§6).
 `targets.py --tags` prints the tag each selected target must carry.
 
-All ten live in one repository, `git@github.com:Vanuan/bite-gpui.git`. They share
+All ten live in one repository, `git@github.com:bite-gpui/bite-gpui.git`. They share
 a common ancestor — ce is a fork of zed, not a separate lineage — but they have
 diverged since, so what a target publishes differs even where the crate names are
 the same. That is why the table declares a lineage per target instead of
@@ -90,7 +90,7 @@ what they actually got:
 
 ```toml
 [package.metadata.bite]
-source = "https://github.com/Vanuan/bite-gpui"
+source = "https://github.com/bite-gpui/bite-gpui"
 branch = "bite_v1.20.2"
 commit = "<sha>"
 upstream = "1.20.2"
