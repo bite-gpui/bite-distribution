@@ -1,25 +1,38 @@
 #!/usr/bin/env python3
 """Compile the packaged archives the way a consumer does.
 
-`cargo publish --dry-run` extracts each tarball and compiles it, which is the
-check that an artifact builds. It skips the crates in `no_verify`, though — and
-those are the ones whose packaging is hardest to get right, because nothing else
-in the pipeline ever looks inside their tarball. `gpui_apple` was in that set
-when its build script turned out to read shader types from a sibling crate.
+`cargo publish --dry-run` extracts a tarball and compiles it as if it were the
+root of a build. That resolves the package's *dev*-dependencies, and it is why a
+crate whose dev-dependencies cannot resolve is published with `--no-verify` — the
+verification is skipped, so nothing ever looks inside its tarball. `gpui_apple`
+was in that set when its build script turned out to read shader types from a
+sibling crate, and it is the class of defect this check exists for.
 
-This closes that gap. Every publishable crate is packaged without verification,
-the archives are unpacked into a directory that has no sibling of the workspace,
-and each one is compiled there. A crate that built from the workspace but not
-from its archive fails here, and that is the only property a registry install
-depends on.
+A consumer never resolves a dependency's dev-dependencies. So this does what a
+consumer does: it packages every publishable crate, unpacks the archives into a
+directory with no workspace around them, and writes a small crate that depends on
+all of them. Cargo then resolves and compiles exactly what a registry install
+gets, `no_verify` included, and nothing is compiled that a consumer would not
+compile.
 
 The unpacked crates are named `<published>-<version>`, so a path that steps up
 with `..` and then names a source crate — the `gpui_apple` shape — finds nothing:
 the directory it would look for is not the directory it is standing in.
 
+**`cargo check`, not `cargo build`.** The gate has already compiled and tested
+the closure, and `publish.py --dry-run` has already built most of these archives
+for real. What is left to prove is that each archive is *self-sufficient*:
+resolution succeeds, build scripts run, and every path the crate names is in the
+tarball. `check` proves all of that and emits no code, which is what keeps the
+step's disk inside a runner. `--build` does the full build when it is wanted.
+
+Default features, not `--all-features`: this is the build a consumer gets, and
+the gate's workspace-wide `--all-features` check already covers the code behind
+`bench-support`, `inspector` and `profiler`.
+
 Usage:
-    test_isolated.py --stage src                 # package, unpack, build
-    test_isolated.py --stage src --no-build      # package and unpack only
+    test_isolated.py --stage src                 # package, unpack, compile the consumer
+    test_isolated.py --stage src --only bite-gp-apple
 """
 
 from __future__ import annotations
@@ -28,49 +41,66 @@ import argparse
 import json
 import os
 import pathlib
-import shutil
 import subprocess
 import sys
 import tarfile
-import tempfile
 
-# wasm-only crates are published but do not build for the host, so they are
-# unpacked and left alone; the native check has nothing to say about them.
-def publishable(report: dict) -> list[dict]:
-    withheld = {entry["published"] for entry in report.get("blocked", [])}
-    return [crate for crate in report["crates"] if crate["published"] not in withheld]
+# Named so that it cannot be confused with a published crate.
+CONSUMER = "bite-isolated-check"
+
+# A package's own manifest as packaged, plus one line. The archive has no
+# `[workspace]` table, and cargo resolves a manifest by walking up to the nearest
+# workspace, so a crate unpacked inside the staging workspace is reported as
+# believing it is a member when it is not — the member list cannot cover a
+# directory that only exists at this point. Declaring it its own workspace is
+# what makes it standalone, which is what a crate fetched from the registry is.
+STANDALONE = "\n[workspace]\n"
 
 
-def package(stage: pathlib.Path, crate: dict, crates: list[dict]) -> pathlib.Path:
-    """Produce the `.crate` for one crate, without the verification build.
+def patch_flag(published: str, directory: pathlib.Path) -> list[str]:
+    """Route a crates-io dependency at a local crate directory.
 
-    Verification is skipped because this run does its own: it compiles from the
-    unpacked archive rather than from the tarball cargo would have built.
-
-    Packaging still resolves a normalised manifest, whose path dependencies have
-    become version requirements, so the rest of the release has to be patched in
-    — the same flags a publish dry run passes. A first release has none of these
-    versions on the registry yet, so without them the second crate already fails
-    with `no matching package named …`.
+    Packaging needs this even though nothing is uploaded: cargo rewrites path
+    dependencies into version requirements and then resolves them, and on a first
+    release none of those versions is on the registry yet.
     """
+    return ["--config", f"patch.crates-io.{published}.path={json.dumps(str(directory))}"]
+
+
+def crate_dir(stage: pathlib.Path, crate: dict) -> pathlib.Path:
+    return (stage / crate["dir"]).resolve()
+
+
+def unpacked_dir(work: pathlib.Path, crate: dict) -> pathlib.Path:
+    return (work / f"{crate['published']}-{crate['version']}").resolve()
+
+
+def publishable(report: dict) -> list[dict]:
+    """The crates that will be published, in publish order."""
+    by_name = {crate["published"]: crate for crate in report["crates"]}
+    return [by_name[name] for name in report["order"] if name in by_name]
+
+
+def package(stage: pathlib.Path, crate: dict, report: dict) -> pathlib.Path:
+    """Produce the `.crate` for one crate, without the verification build."""
     patches = [
         flag
-        for other in crates
+        for other in report["crates"]
         if other["published"] != crate["published"]
-        for flag in (
-            "--config",
-            f"patch.crates-io.{other['published']}.path="
-            f"{json.dumps(str((stage / other['dir']).resolve()))}",
-        )
+        for flag in patch_flag(other["published"], crate_dir(stage, other))
     ]
-    command = [
-        "cargo", "package",
-        # Staging rewrites the tree in place, so it is dirty by construction.
-        "--allow-dirty", "--no-verify",
-        "--manifest-path", str(stage / crate["dir"] / "Cargo.toml"),
-        *patches,
-    ]
-    result = subprocess.run(command, cwd=stage, capture_output=True, text=True)
+    result = subprocess.run(
+        [
+            "cargo", "package",
+            # Staging rewrites the tree in place, so it is dirty by construction.
+            "--allow-dirty", "--no-verify",
+            "--manifest-path", str(stage / crate["dir"] / "Cargo.toml"),
+            *patches,
+        ],
+        cwd=stage,
+        capture_output=True,
+        text=True,
+    )
     if result.returncode != 0:
         raise SystemExit(
             f"{crate['published']}: cargo package failed:\n{result.stderr.strip()}"
@@ -81,71 +111,78 @@ def package(stage: pathlib.Path, crate: dict, crates: list[dict]) -> pathlib.Pat
     return archive
 
 
-def unpack(archive: pathlib.Path, work: pathlib.Path) -> pathlib.Path:
-    """Extract a `.crate` into its own directory and return that directory."""
+def unpack(archive: pathlib.Path, work: pathlib.Path) -> None:
+    """Extract a `.crate` into its own directory, as a standalone package."""
     with tarfile.open(archive, "r:gz") as tar:
         tar.extractall(work, filter="data")
-    # A `.crate` contains exactly one top-level directory, named for the package.
-    unpacked = work / archive.name.removesuffix(".crate")
-    if not unpacked.is_dir():
-        raise SystemExit(f"{archive.name}: does not unpack to {unpacked.name}/")
-    return unpacked
+    crate = work / archive.name.removesuffix(".crate")
+    manifest = crate / "Cargo.toml"
+    if not manifest.is_file():
+        raise SystemExit(f"{archive.name}: did not unpack into its own directory")
+    text = manifest.read_text()
+    if "[workspace]" not in text:
+        manifest.write_text(text + STANDALONE)
 
 
-def patches(work: pathlib.Path, crates: list[dict], root: str) -> list[str]:
-    """Route every other unpacked crate into this one's resolution.
+def write_consumer(work: pathlib.Path, crates: list[dict]) -> pathlib.Path:
+    """Write the crate that consumes every unpacked archive."""
+    directory = work / "consumer"
+    (directory / "src").mkdir(parents=True, exist_ok=True)
+    lines = [
+        "# Generated by test_isolated.py: a consumer of the unpacked archives.",
+        "#",
+        "# Depending on every crate is what makes one build cover the whole release.",
+        "# A consumer resolves a dependency's normal dependencies and not its",
+        "# dev-dependencies, which is the difference from `cargo publish --dry-run`",
+        "# and the reason the crates in `no_verify` are checked here.",
+        "",
+        "[package]",
+        f'name = "{CONSUMER}"',
+        'version = "0.0.0"',
+        'edition = "2021"',
+        "",
+        "# This lives inside the staging workspace's target directory, so it has to",
+        "# say it is not a member of it.",
+        "[workspace]",
+        "",
+        "[dependencies]",
+    ]
+    lines += [f'{crate["published"]} = "{crate["version"]}"' for crate in crates]
+    (directory / "Cargo.toml").write_text("\n".join(lines) + "\n")
+    (directory / "src" / "lib.rs").write_text("")
+    return directory
 
-    The archives are unpacked, not published, so their dependencies have no
-    registry version to resolve to yet. Patching by path is what a first release
-    does; it is also what proves the archive alone is sufficient, because the
-    patch points at the unpacked directory and never at the checkout.
-    """
-    flags: list[str] = []
-    for crate in crates:
-        if crate["published"] == root:
-            continue
-        directory = (work / f"{crate['published']}-{crate['version']}").resolve()
-        flags += ["--config", f"patch.crates-io.{crate['published']}.path={json.dumps(str(directory))}"]
-    return flags
 
-
-def build(work: pathlib.Path, crates: list[dict], wasm_only: set[str], only: set[str]) -> int:
-    target_dir = work / "target"
-    failures: list[str] = []
-    for crate in crates:
-        if only and crate["published"] not in only:
-            continue
-        if crate["published"] in wasm_only:
-            print(f"--> {crate['published']} is wasm-only; unpacked but not built natively")
-            continue
-        root = work / f"{crate['published']}-{crate['version']}"
-        command = [
-            "cargo", "build",
-            "--manifest-path", str(root / "Cargo.toml"),
-            *patches(work, crates, crate["published"]),
-        ]
-        environment = {**os.environ, "CARGO_TARGET_DIR": str(target_dir)}
-        print(f"==> {crate['published']} {crate['version']}")
-        result = subprocess.run(command, cwd=root, env=environment)
-        if result.returncode != 0:
-            failures.append(crate["published"])
-    if failures:
-        print(
-            f"\nfailed to build from the archive: {', '.join(failures)}",
-            file=sys.stderr,
-        )
-        return 1
-    return 0
+def compile_consumer(
+    work: pathlib.Path, consumer: pathlib.Path, crates: list[dict], mode: str
+) -> int:
+    patches = [
+        flag
+        for crate in crates
+        for flag in patch_flag(crate["published"], unpacked_dir(work, crate))
+    ]
+    print(f"{mode} {CONSUMER} against {len(crates)} archive(s)")
+    return subprocess.run(
+        ["cargo", mode, "--manifest-path", str(consumer / "Cargo.toml"), *patches],
+        cwd=consumer,
+        # One target directory for the whole release, next to the unpacked
+        # sources and outside the staging build's, so the two cannot collide and
+        # this one can be discarded on its own.
+        env={**os.environ, "CARGO_TARGET_DIR": str(work / "target")},
+    ).returncode
 
 
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--stage", required=True, type=pathlib.Path)
     parser.add_argument("--work", type=pathlib.Path,
-                        help="where to unpack; a fresh temporary directory by default")
-    parser.add_argument("--no-build", action="store_true",
+                        help="where to unpack and compile; `isolated/` inside the "
+                             "staged checkout by default")
+    parser.add_argument("--unpack-only", action="store_true",
                         help="package and unpack, but do not compile")
-    parser.add_argument("--only", help="comma-separated crate names to build")
+    parser.add_argument("--build", action="store_true",
+                        help="compile with `cargo build` instead of `cargo check`")
+    parser.add_argument("--only", help="comma-separated crates for the consumer to depend on")
     args = parser.parse_args(argv)
 
     stage = args.stage.resolve()
@@ -158,29 +195,30 @@ def main(argv: list[str]) -> int:
     if not crates:
         raise SystemExit("nothing is publishable; every crate in this release is withheld")
 
-    work = args.work.resolve() if args.work else pathlib.Path(tempfile.mkdtemp(prefix="bite-isolated-"))
+    if args.only:
+        wanted = {name.strip() for name in args.only.split(",") if name.strip()}
+        unknown = sorted(wanted - {crate["published"] for crate in crates})
+        if unknown:
+            raise SystemExit(f"not publishable in this release: {', '.join(unknown)}")
+        crates = [crate for crate in crates if crate["published"] in wanted]
+
+    # Inside the staged checkout but outside `target/`: the same volume the job
+    # already writes to, so this is never a small tmpfs, while `target/` stays
+    # what the build cache is keyed on and does not absorb a second closure's
+    # worth of artifacts. The directory is disposable — re-running unpacks it
+    # again — and is never committed.
+    work = (args.work or stage / "isolated").resolve()
     work.mkdir(parents=True, exist_ok=True)
     print(f"unpacking {len(crates)} crates into {work}")
 
     for crate in crates:
-        archive = package(stage, crate, crates)
-        unpacked = unpack(archive, work)
-        print(f"--- {crate['published']} {crate['version']} -> {unpacked.name}/")
+        unpack(package(stage, crate, report), work)
 
-    if args.no_build:
+    if args.unpack_only:
         return 0
 
-    only = {name.strip() for name in args.only.split(",") if name.strip()} if args.only else set()
-    known = {crate["published"] for crate in crates}
-    unknown = sorted(only - known)
-    if unknown:
-        raise SystemExit(f"not in this release: {', '.join(unknown)}")
-
-    try:
-        return build(work, crates, set(report.get("wasm_only", [])), only)
-    finally:
-        if not args.work:
-            shutil.rmtree(work, ignore_errors=True)
+    consumer = write_consumer(work, crates)
+    return compile_consumer(work, consumer, crates, "build" if args.build else "check")
 
 
 if __name__ == "__main__":

@@ -685,6 +685,30 @@ def stage(target: dict, source: Path, report_path: Path | None, strict: bool = F
         for crate in entry["needed_by"].split(", "):
             blocked.setdefault(crate, reason)
 
+    # Withholding is transitive. A crate whose dependency cannot be published
+    # cannot be published either: `cargo package` normalises that dependency into
+    # a version requirement and then has to resolve it, so it fails to package at
+    # all — and a consumer would fail the same way. ce is the case that shows it:
+    # `gpui_ce_apple` is held back by `wgsl-rs`, and `gpui_ce_macos` reaches it
+    # from a `cfg(target_os = "macos")` table, which cargo resolves for packaging
+    # regardless of the target being built.
+    #
+    # Only real dependencies count. A withheld *dev*-dependency does not stop a
+    # crate being published; that is what `no_verify` is for, and blocking on it
+    # would withhold crates that publish perfectly well.
+    dependents: dict[str, set[str]] = {}
+    for package in order:
+        for dependency in workspace_dependencies(crates[package], include_dev=False):
+            if dependency in order:
+                dependents.setdefault(dependency, set()).add(package)
+    withheld = list(blocked)
+    while withheld:
+        package = withheld.pop()
+        for dependent in sorted(dependents.get(package, ())):
+            if dependent not in blocked:
+                blocked[dependent] = f"depends on {published[package]}, which is withheld"
+                withheld.append(dependent)
+
     report["problems"] = problems
     report["blocked"] = [
         {"package": package, "published": published[package], "reason": reason}

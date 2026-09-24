@@ -346,15 +346,26 @@ What the pipeline does about it is deliberately not "fail":
 - **staging withholds the crates and warns.** The tree still builds, because a
   git dependency resolves locally, so the affected crates are named in the
   report (`blocked`) and removed from the publish order. Staging succeeds, so CI
-  can check the other twenty-two ce crates instead of stopping at a known
+  can check the other seventeen ce crates instead of stopping at a known
   blocker. `stage.py --strict` restores the hard failure for anyone who wants it.
+- **withholding is transitive.** A crate that depends on a withheld crate is
+  withheld too, because cargo will not package it either: `cargo package`
+  normalises the dependency into a version requirement and then has to resolve
+  it. ce is where this matters — `gpui_ce_apple` is held back by `wgsl-rs`, and
+  `gpui_ce_macos` reaches it from a `cfg(target_os = "macos")` table, which
+  cargo resolves for packaging regardless of the target being built. That takes
+  ce from four crates withheld to nine: the four, plus `gpui_ce_macos`,
+  `gpui_ce_platform`, `gpui_ce_linux`, `gpui_ce_web` and `gpui_ce_gpui_parley`.
+  Only real dependencies count; a withheld *dev*-dependency does not stop a crate
+  being published, which is what `no_verify` is for.
 - **the dry run skips what is withheld**, and prints why.
 - **a release refuses.** `publish.py` will not publish a target with withheld
   crates unless `--allow-partial` is passed deliberately: a release is all of its
-  crates or none of them, and ce's facade depends on the withheld ones.
+  crates or none of them, and a partial one published by accident cannot be
+  withdrawn.
 
-A branch-level failure that hides twenty-two crates' worth of checking is worse
-than a warning that names four.
+A branch-level failure that hides a release's worth of checking is worse than a
+warning that names nine.
 
 One crate reaches outside `crates/`: `perf` lives in `tooling/perf` and is pulled
 in by `util_macros`. It is copied like any other crate and published as
@@ -412,13 +423,20 @@ in `bench_context` and `profiler::hang`.
 6. `check_reads.py` — for every publishable crate, `cargo package --list` gives
    the file set that would be uploaded, and every path the crate names at build
    time has to be inside it. See below.
-7. `publish.py --dry-run` — packages each crate and compiles it in isolation,
-   which is the only check that the published artifact builds. `--allow-dirty`
-   is required throughout because staging rewrites the tree in place.
-8. `test_isolated.py` — unpacks every publishable archive into a directory with
-   no sibling of the workspace and compiles it there. The dry run already does
-   this for most crates, but it skips the ones in `no_verify`, and those are
-   exactly the crates whose tarball nothing else looks inside.
+7. `publish.py --dry-run` — packages each crate and compiles it as the root of a
+   build, which is the only check that the published artifact builds. Resolving a
+   root's *dev*-dependencies is part of that, so a crate whose dev-dependencies
+   cannot resolve is published with `--no-verify` and its compilation is skipped.
+   `--allow-dirty` is required throughout because staging rewrites the tree in
+   place.
+8. `test_isolated.py` — packages and unpacks every publishable archive, then
+   compiles a generated crate that depends on all of them. That is what closes
+   the `no_verify` gap above: a consumer resolves a dependency's normal
+   dependencies and never its dev-dependencies. It is also the only check that
+   fails when an archive cannot stand on its own. It compiles with `cargo check`
+   and default features — the gate's workspace-wide `--all-features` check has
+   already covered the code behind the non-default ones, and a closure's worth of
+   codegen is what does not fit on a runner.
 
 **The gate has to be able to see a crate that reads outside itself, and it could
 not.** `gpui_apple`'s build script fed cbindgen five shader sources located by
@@ -562,6 +580,12 @@ the lockfile, with a shared restore prefix. The first runs spent most of their
 time downloading dependencies, and while different targets have different
 lockfiles — so the *build* cache cannot be shared — the crates they download are
 almost the same.
+
+The isolated build unpacks the archives into `isolated/` inside the staged
+checkout, with `isolated/target` as its own target directory. That is
+deliberately outside `target/` — the directory the build cache is keyed on — so a
+second closure's worth of artifacts is never cached, and the directory is
+disposable between runs.
 
 `.github/workflows/release.yml` — manual `workflow_dispatch` taking the target
 name, a confirmation input that must repeat it, and `dry_run` defaulting to

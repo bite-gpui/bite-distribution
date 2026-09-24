@@ -133,14 +133,13 @@ runs:
       working-directory: ${{ inputs.stage }}
       run: python3 "$GITHUB_WORKSPACE/publish.py" --stage . --dry-run
 
-    # The closing gate. `cargo publish --dry-run` compiles each tarball, but it
-    # skips the crates in `no_verify` — and those are the ones whose packaging is
-    # hardest to get right, because nothing else in the pipeline looks inside
-    # their archive. This unpacks every publishable crate into a directory that
-    # has no sibling of the workspace and compiles it there, so a crate that
-    # builds from the checkout and not from its tarball fails here.
-    # `gpui_apple`'s build script read shader types from a sibling crate, and
-    # `gpui_apple` is in `no_verify`: this is the step that fails on it.
+    # The closing gate. `cargo publish --dry-run` compiles each tarball as the
+    # root of a build, which resolves the package's dev-dependencies and is why
+    # the crates in `no_verify` are published without verification at all —
+    # nothing else in the pipeline looks inside their archive. This does: it
+    # unpacks every publishable crate and compiles a crate that depends on all of
+    # them, which is what a consumer resolves. `gpui_apple` is in `no_verify`, and
+    # this is the step that fails on its archive.
     - name: Isolated build
       if: inputs.isolated == 'true'
       shell: bash
