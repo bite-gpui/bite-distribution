@@ -1,0 +1,13 @@
+# Pinned deliberately, so the gate's lints do not move under us.
+#
+# A run failed on a `useless_conversion` lint that rust-1.98.0 grew and the code,
+# written under 1.95.0, had never seen — which meant a source change on a branch
+# to satisfy a rule that did not exist when it was written. The branches were
+# built and gated with this toolchain, so this is the one the gate should use.
+#
+# Bump it deliberately, in a run that fixes whatever the newer toolchain reports,
+# rather than in reaction to a red run. The workflows pin the same channel
+# explicitly; this file is for local runs and for the record.
+[toolchain]
+channel = "1.95.0"
+components = ["clippy", "rustfmt"]

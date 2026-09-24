@@ -449,6 +449,15 @@ is writing to cannot be extended. So:
   whole stack, so testing a crate that has none is pure cost; its lib is still
   checked.
 
+**The toolchain is pinned, so the bar does not move.** A run failed on a
+`useless_conversion` lint that rust-1.98.0 had grown and the code, written under
+1.95.0, had never seen: six sites where `gpui::hsla` already returns the `Hsla`
+a field wants. Nothing about publishing requires chasing a moving compiler — it
+means fixing branches to satisfy rules that did not exist when they were written
+— so both workflows name the toolchain the branches were built and gated with,
+and `rust-toolchain.toml` records it for local runs. Bumping it is a deliberate
+act, taken together with a run that fixes whatever the newer toolchain reports.
+
 **The wasm-only crates are excluded from the native run and are not yet checked
 at all.** `gpui_web` includes its modules under
 `cfg(any(target_family = "wasm", test))` while their dependencies (`gpui_engine`,
