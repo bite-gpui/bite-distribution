@@ -525,15 +525,27 @@ order, and handles the three things a bare loop gets wrong. `--commands` prints
 that same sequence as plain `cargo publish` lines, for running the first release
 by hand, derived from the same report so it cannot drift.
 
-**Verifying a first release.** `cargo publish` resolves a dependency that has a
-`version` from the registry, not from its `path`, so a dependency-ordered *first*
-release fails at the second crate: its freshly-versioned predecessor has not
-been uploaded yet. For dry runs, every crate in the set is patched into the
-temporary verification resolution
-(`--config patch.crates-io.<name>.path=…`), so each tarball is still packaged and
-compiled, but against the local release graph instead of stale registry
-versions. The patches are command-line only and never reach a published
-manifest. ce's release recipe does the same, and needed it for the same reason.
+**Resolving a first release.** `cargo publish` resolves a dependency that has a
+`version` from the registry, not from its `path`, and it resolves *before* it
+uploads: the packaged manifest is normalised, then resolved — dev-dependencies
+included, for every target — and only then is the tarball sent. A first release
+cannot be published without help. The second crate names a version of the first
+that is not on the registry yet, and no ordering fixes it for `gpui_macros`,
+which names the facade from a *dev*-dependency while the facade is published
+last. So every crate in the set is patched to its staged directory
+(`--config patch.crates-io.<name>.path=…`), which resolves the local release
+graph. `--no-verify` does not avoid this — it skips the compilation, and the
+resolution happened before that. Measured on 1.20.203: 14 of 31 crates package
+without the patches, 31 of 31 with them.
+
+A patch is a resolution override and never part of the artifact. What is uploaded
+is the normalised manifest, naming versions and no paths — `[dev-dependencies.gpui]
+version = "1.20.203"`, `package = "bite-gpui"` — and cargo refuses to package a
+path dependency for publication anyway. The same entries are written to
+`.cargo/config.toml` in the staged tree, which is what lets a hand-run
+`cargo publish` command work; that file sits outside every crate directory, so it
+is not packaged either, and `publish.py --commands` writes it alongside the
+commands it prints.
 
 **Resuming.** A version already on crates.io is skipped, so an interrupted run
 continues rather than restarting, and `--only <crate>` re-runs from a failure
