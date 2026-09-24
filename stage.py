@@ -223,19 +223,18 @@ def dep_edits(source: Path, crates: dict, names, published: dict, version: str) 
     advisories: list[dict] = []
     patched: list[dict] = []
 
-    for name in names:
-        crate = crates[name]
+    # Every crate in the checkout, not just the closure. A crate outside the
+    # closure that depends on one we renamed still has to resolve, and cargo
+    # resolves the whole workspace, so leaving those alone breaks everything:
+    # ce's `gpui_ce_elements` and `gpui_ce_tokio` are outside its closure and
+    # both name `gpui-ce`.
+    for name, crate in crates.items():
+        in_closure = name in names
         manifest = source / crate["dir"] / "Cargo.toml"
         for key, records in crate["deps"].items():
             for record in records:
-                target = root if record["base"] == "root" else manifest
-                entry = {
-                    "in": label_of(source, target, root),
-                    "key": key,
-                    "package": record.get("package") or key,
-                    "needed_by": name,
-                    "table": record["where"].split(".")[-1],
-                }
+                at_root = record["base"] == "root"
+                target = root if at_root else manifest
 
                 if record["kind"] == "path":
                     dependency = record.get("path_package")
@@ -247,8 +246,17 @@ def dep_edits(source: Path, crates: dict, names, published: dict, version: str) 
                         }
                     continue
 
-                if record["kind"] != "git":
+                # Git substitutions and publishing blockers are about what we
+                # publish, so they stay scoped to the closure.
+                if not in_closure or record["kind"] != "git":
                     continue
+                entry = {
+                    "in": label_of(source, target, root),
+                    "key": key,
+                    "package": record.get("package") or key,
+                    "needed_by": name,
+                    "table": record["where"].split(".")[-1],
+                }
                 if record.get("via_patch"):
                     patched.append(entry)
                     continue
@@ -272,12 +280,27 @@ def verify_staged(source: Path, before: dict, published: dict, version: str) -> 
     """Re-read the staged tree and confirm it says what was intended.
 
     Re-parsing rather than trusting the edits, because the edits are textual: a
-    dependency declared as a `[workspace.dependencies.foo]` sub-table, or a key
-    the plan missed, would otherwise pass unnoticed until cargo resolved a stale
-    version — or until a consumer did.
+    dependency declared as a `[workspace.dependencies.foo]` sub-table, a key the
+    plan missed, or a crate outside the closure that still names a renamed
+    package would otherwise pass unnoticed until cargo resolved a stale version
+    — or until a consumer did.
     """
     after = inventory.collect(source)["crates"]
     problems: list[str] = []
+
+    # No manifest anywhere may still name a package we renamed. This is the
+    # check that would have caught `gpui_ce_elements` before the resolver did.
+    renamed = {package: name for package, name in published.items() if name != package}
+    for name, crate in after.items():
+        for key, records in crate["deps"].items():
+            for record in records:
+                stale = renamed.get(record.get("package"))
+                if stale:
+                    problems.append(
+                        f"{name}: dependency {key} still names {record['package']!r}, "
+                        f"which was renamed to {stale!r}"
+                    )
+
     for package, name in sorted(published.items()):
         staged = after.get(name)
         if staged is None:
@@ -533,6 +556,18 @@ def stage(target: dict, source: Path, report_path: Path | None, strict: bool = F
                 "license": license_id,
             }
         )
+
+    # Plans can land outside the closure: a crate that depends on one we renamed
+    # but is not itself published. Those manifests are not touched by the loop
+    # above, and cargo still resolves them, so they get the dependency rewrite
+    # and nothing else — no metadata, no version bump, no licence.
+    processed = {source / crates[name]["dir"] / "Cargo.toml" for name in order}
+    for manifest, plan in sorted(plans.items(), key=lambda item: str(item[0])):
+        if manifest in processed or manifest == root_manifest:
+            continue
+        lines = read(manifest)
+        rewrite_dep_specs(lines, str(manifest.relative_to(source)), plan, report)
+        write(manifest, lines)
 
     write(root_manifest, root_lines)
 

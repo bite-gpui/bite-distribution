@@ -266,15 +266,23 @@ it keeps cargo itself as the source of truth.
 5. **Raise `publish`** — drop the crate-level `publish = false` (11 of the 1.14
    closure inherit zed's workspace default) and flip the workspace default to
    true.
-6. **Rewrite `[workspace.dependencies]`** for closure crates, gaining `package`
-   (the published name) and `version` (the target version). No zed entry has a
-   version, and cargo refuses to publish a dependency without one.
+6. **Rewrite every reference to a renamed crate**, in every manifest of the
+   checkout, not only the closure's. Cargo resolves the whole workspace, so a
+   crate that depends on one we renamed but is not itself published has to keep
+   resolving: ce's `gpui_ce_elements`, `gpui_ce_tokio` and `gpui_ce_zed_util`
+   are outside its closure, and leaving them alone fails the workspace with
+   `no matching package named gpui-ce found`. The reference gains `package` (the
+   published name) and `version` (the target version); a manifest outside the
+   closure gets that and nothing else — no provenance, no licence, no bump.
 7. **Replace git dependencies** that have a registry equivalent (§8), scoped to
    the closure and to whichever manifest actually declares them.
 8. **License and provenance** (§9).
-9. **Fail loudly** on a crate that has no name in the naming rule, on a
-   workspace entry that cannot be rewritten, and on any remaining git
-   dependency that has no registry equivalent.
+9. **Re-read the result and check it** (`verify_staged`): every renamed crate
+   carries the right name, version and lib name; every dependency on one
+   resolves to the published name and version; and **no manifest anywhere still
+   names a package that was renamed**. That last check is what would have caught
+   the `gpui_ce_elements` failure before the resolver did. A crate with no name
+   in the naming rule is fatal; a withheld crate (§8) is reported, not fatal.
 
 The report is the handoff: `publish.py` reads it for the order, names and
 versions, so the two scripts cannot disagree about what is being released.

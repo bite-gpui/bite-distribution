@@ -116,20 +116,24 @@ Both lineages stage from a realistic CI checkout. `bite_v1.20.2` was cloned at
 `bite_ce_main` staged to 26 crates, 32 rewrites, reporting 4 withheld rather than
 failing.
 
-Also verified: `cargo metadata` resolves the whole staged workspace; every
-staged package keeps its original lib name (`bite-gpui` exports `gpui`,
-`bite-gp-platform` exports `gpui_platform`, `bite-gp-util` exports `util`);
-`publish.py --dry-run` packages and compiles a leaf crate in isolation; the
-version scheme's edges (amendment bounds, prereleases, patch overflow); and that
-an untagged branch is refused with the exact command to fix it.
+Also verified: `cargo metadata` resolves the whole staged workspace for both
+lineages — 775 packages for ce, including the crates outside its closure that
+depend on renamed ones; every staged package keeps its original lib name
+(`bite-gpui` exports `gpui`, `bite-gp-platform` exports `gpui_platform`,
+`bite-gp-util` exports `util`); `publish.py --dry-run` packages and compiles a
+leaf crate in isolation; the version scheme's edges (amendment bounds,
+prereleases, patch overflow); and that an untagged branch is refused with the
+exact command to fix it.
 
-Staging and the gate between them have found six things a design document would
-not have: the lib name is derived from the package name unless pinned,
+Staging and the gate between them have found seven things a design document
+would not have: the lib name is derived from the package name unless pinned,
 `collections` already carried a version that had to be overridden rather than
 added, ce declares its path dependencies in each member instead of the workspace
 table, `[profile.dev.package]` lists package names that must not be rewritten,
-the version cannot be derived from a tag the checkout does not have, and the gate
-was checking with default features where the project checks with all of them.
+the version cannot be derived from a tag the checkout does not have, the gate was
+checking with default features where the project checks with all of them, and
+crates *outside* the closure that depend on renamed ones break the whole
+workspace even though they are not published.
 
 Not yet run: the compile gates locally (this host is at 98% disk and a full
 closure build needs tens of GB — CI runs them), the wasm32 check for `gpui_web`
