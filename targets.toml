@@ -145,6 +145,21 @@ upstream = "1.21.0-pre"
 # read from sibling crates, which a packaged `.crate` does not carry.
 amendment = 2
 
+[[target]]
+name = "bite_v1.21.0"
+repo = "."
+branch = "bite_v1.21.0"
+lineage = "zed"
+roots = ["gpui", "gpui_parley"]
+version_from = "release-tag"
+upstream = "1.21.0"
+# Nothing yet, and it is the first line to start clean: the branch is upstream's
+# 1.21.0 release with the rearchitecture replayed onto it, and the three fixes
+# the older lines each needed (the embedded fonts, the trace-state test race, the
+# vendored shader sources) were already commits on the preview branch it was
+# rebased from.
+amendment = 0
+
 # Rolling tip. No upstream release tag is reachable from it, so it publishes on
 # the CalVer series instead of borrowing a release number it does not have.
 [[target]]
