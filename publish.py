@@ -30,6 +30,7 @@ the compilation that skips.
 
 Usage:
     publish.py --stage wt/bite_v1.20.2 --list
+    publish.py --stage wt/bite_v1.20.2 --commands
     publish.py --stage wt/bite_v1.20.2 --dry-run
     publish.py --stage wt/bite_v1.20.2              # needs CARGO_REGISTRY_TOKEN
 """
@@ -129,6 +130,8 @@ def main(argv: list[str]) -> int:
                         choices=["publishable", "native", "wasm", "all"],
                         help="print package names and exit")
     parser.add_argument("--dirs", action="store_true", help="print the crate directories and exit")
+    parser.add_argument("--commands", action="store_true",
+                        help="print the cargo publish commands this would run, in order, and exit")
     parser.add_argument("--only", help="publish just this crate (comma-separated)")
     parser.add_argument("--no-verify", action="store_true")
     parser.add_argument("--allow-partial", action="store_true",
@@ -159,6 +162,25 @@ def main(argv: list[str]) -> int:
     if args.dirs:
         for name in order:
             print(by_name[name]["dir"])
+        return 0
+
+    if args.commands:
+        # The same sequence as bare `cargo publish` lines, for running a release
+        # by hand. It is derived here so it cannot drift from what this script
+        # does: one order, one `--no-verify` set, both from the stage report.
+        chosen = order
+        if args.only:
+            wanted = [name.strip() for name in args.only.split(",") if name.strip()]
+            unknown = [name for name in wanted if name not in by_name]
+            if unknown:
+                raise SystemExit(f"not in this release: {', '.join(unknown)}")
+            chosen = [name for name in order if name in set(wanted)]
+        for name in chosen:
+            crate = by_name[name]
+            flags = ["--allow-dirty", "--manifest-path", f"{crate['dir']}/Cargo.toml"]
+            if crate["published"] in no_verify:
+                flags.append("--no-verify")
+            print("cargo publish " + " ".join(flags))
         return 0
 
     if withheld:

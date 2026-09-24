@@ -521,7 +521,9 @@ A target that fails any gate is not publishable. Gate failure is per target, so
 ## 11. Publish order and rate limits
 
 `publish.py --stage <dir>` reads the stage report, publishes in dependency
-order, and handles the three things a bare loop gets wrong.
+order, and handles the three things a bare loop gets wrong. `--commands` prints
+that same sequence as plain `cargo publish` lines, for running the first release
+by hand, derived from the same report so it cannot drift.
 
 **Verifying a first release.** `cargo publish` resolves a dependency that has a
 `version` from the registry, not from its `path`, so a dependency-ordered *first*
@@ -541,6 +543,22 @@ this is the only way a multi-crate release is sane.
 **Visibility.** crates.io accepts an upload before its API reports the version,
 and the next crate in the order depends on the one just uploaded, so the
 publisher waits for the registry to acknowledge each upload before continuing.
+Its API answers 403 to a request that carries no `User-Agent`, which is a
+silent trap for anything polling it by hand.
+
+**A first publish also claims the names.** crates.io assigns a new crate name to
+the token that uploads it first, and adding an owner afterwards is a crate at a
+time. Publishing with a token that belongs to the `bite-gpui` organisation, or
+adding the organisation as an owner as soon as the first crate of each name
+lands, is the difference between one step and thirty-one.
+
+**Branch order is free, but the newest branch should still go first.** The eight
+release targets publish the same names at different versions (`1.14.202`,
+`1.15.102`, …), and crates.io accepts a version below the current maximum — that
+is how a patch to an old major line ships. Nothing breaks if an older branch
+goes first, except that the version a consumer resolves by default is the
+highest one, so publishing the current release first is what makes
+`cargo add bite-gpui` mean the current release.
 
 Two caveats, both inherited from ce's own release and both deliberate. Some
 crates are published with `--no-verify`, because verification resolves the root
