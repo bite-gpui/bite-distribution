@@ -85,6 +85,10 @@ lineage = "zed"
 roots = ["gpui", "gpui_parley"]
 version_from = "release-tag"
 upstream = "1.20.2"
+# `gpui_parley` reached outside its own directory for the fonts it embeds, so the
+# tarball it packaged could not be compiled back; the fix is new content, which a
+# release branch pays for with the next amendment (DESIGN §6).
+amendment = 1
 
 [[target]]
 name = "bite_v1.21.0-pre"
