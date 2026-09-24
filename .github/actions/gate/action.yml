@@ -125,9 +125,11 @@ runs:
       working-directory: ${{ inputs.stage }}
       run: python3 "$GITHUB_WORKSPACE/check_reads.py" --stage .
 
-    # The dry run is the closing gate: it packages each crate and compiles it
-    # in isolation, which is the only check that the published artifact builds.
-    # Withheld crates are skipped here and refused at release time.
+    # The dry run packages each crate and compiles it as the root of a build,
+    # which is the only check that the published artifact builds. Resolving a
+    # root's dev-dependencies is part of that, which is why the crates in
+    # `no_verify` are packaged without it. Withheld crates are skipped here and
+    # refused at release time.
     - name: Publish dry run
       shell: bash
       working-directory: ${{ inputs.stage }}
