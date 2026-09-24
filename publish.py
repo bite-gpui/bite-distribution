@@ -41,7 +41,7 @@ Usage:
     publish.py --stage wt/bite_v1.20.2 --list
     publish.py --stage wt/bite_v1.20.2 --commands
     publish.py --stage wt/bite_v1.20.2 --dry-run
-    publish.py --stage wt/bite_v1.20.2              # needs CARGO_REGISTRY_TOKEN
+    publish.py --stage wt/bite_v1.20.2              # needs a crates.io token
 """
 
 from __future__ import annotations
@@ -54,6 +54,7 @@ import re
 import subprocess
 import sys
 import time
+import tomllib
 import urllib.error
 import urllib.request
 from email.utils import parsedate_to_datetime
@@ -86,6 +87,39 @@ def registry_has(name: str, version: str) -> bool:
         raise SystemExit(f"could not check crates.io for {name} {version}: HTTP {error.code}")
     except urllib.error.URLError as error:
         raise SystemExit(f"could not reach crates.io for {name} {version}: {error.reason}")
+
+
+def registry_token_present() -> bool:
+    """Whether cargo has a crates.io token to publish with.
+
+    The environment variable is only one of the places cargo looks: a machine
+    that ran `cargo login` has the token in `credentials.toml` and none in the
+    environment, which is the ordinary case and was refused outright here.
+    Nothing is read from the token itself, only that one is there.
+    """
+    if os.environ.get("CARGO_REGISTRY_TOKEN") or os.environ.get("CARGO_REGISTRIES_CRATES_IO_TOKEN"):
+        return True
+
+    cargo_home = Path(os.environ.get("CARGO_HOME") or Path.home() / ".cargo")
+    for name in ("credentials.toml", "credentials"):
+        path = cargo_home / name
+        if not path.is_file():
+            continue
+        try:
+            credentials = tomllib.loads(path.read_text())
+        except (tomllib.TOMLDecodeError, OSError) as error:
+            # Not being able to read it is not evidence of no token, and cargo is
+            # the authority on whether the token works. Say so rather than
+            # refusing a release over a file we could not parse.
+            print(f"could not read {path}: {error}", file=sys.stderr)
+            return True
+        # `[registry]` is crates.io, and `[registries.crates-io]` is the same
+        # registry named explicitly; either is what cargo would use.
+        if (credentials.get("registry") or {}).get("token"):
+            return True
+        if ((credentials.get("registries") or {}).get("crates-io") or {}).get("token"):
+            return True
+    return False
 
 
 def wait_for_visibility(name: str, version: str, attempts: int = 12, delay: float = 5.0) -> bool:
@@ -271,8 +305,11 @@ def main(argv: list[str]) -> int:
             raise SystemExit(f"not in this release: {', '.join(unknown)}")
         selected = [name for name in order if name in set(wanted)]
 
-    if not args.dry_run and "CARGO_REGISTRY_TOKEN" not in os.environ:
-        print("CARGO_REGISTRY_TOKEN is not set", file=sys.stderr)
+    if not args.dry_run and not registry_token_present():
+        print(
+            "no crates.io token: run `cargo login`, or set CARGO_REGISTRY_TOKEN",
+            file=sys.stderr,
+        )
         return 2
 
     if no_verify:
