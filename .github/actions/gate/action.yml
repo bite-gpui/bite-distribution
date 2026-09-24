@@ -25,6 +25,10 @@ inputs:
     description: compile the unpacked archives in a directory with no siblings
     required: false
     default: 'true'
+  apple:
+    description: run the Apple backend's cbindgen step on this Linux host
+    required: false
+    default: 'true'
 
 runs:
   using: composite
@@ -124,6 +128,18 @@ runs:
       shell: bash
       working-directory: ${{ inputs.stage }}
       run: python3 "$GITHUB_WORKSPACE/check_reads.py" --stage .
+
+    # Cargo compiles build scripts for the *host*, so `cfg(target_os = "macos")`
+    # keeps the Apple crate's cbindgen step from running on any runner this
+    # project has — which is how a `build.rs` reading five shader types from
+    # sibling crates reached the registry. `check_reads.py` finds that statically;
+    # this runs the step anyway, over the crate's own vendored sources, and shows
+    # cbindgen's own message when it cannot read them.
+    - name: Apple build script
+      if: inputs.apple == 'true'
+      shell: bash
+      working-directory: ${{ inputs.stage }}
+      run: python3 "$GITHUB_WORKSPACE/apple_build_check.py" --stage .
 
     # The dry run packages each crate and compiles it as the root of a build,
     # which is the only check that the published artifact builds. Resolving a
