@@ -28,6 +28,15 @@ reports those as `no_verify`; they are packaged with `--no-verify`, which still
 normalises the manifest, and the gate's workspace-wide check and clippy cover
 the compilation that skips.
 
+**Rate limits.** crates.io allows a burst of five *new* crate names per account
+and then one every ten minutes; new *versions* of existing crates get a burst of
+thirty and then one a minute. The first release of a target is therefore
+thirty-one new names and cannot be published promptly, and the refusal names the
+time the next attempt is allowed. The publisher waits for that time and carries
+on, and after the first refusal it spaces the remaining publishes by the
+interval the refusal implied, so the rest of the release is paced rather than
+refused.
+
 Usage:
     publish.py --stage wt/bite_v1.20.2 --list
     publish.py --stage wt/bite_v1.20.2 --commands
@@ -38,13 +47,16 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import datetime
 import json
 import os
+import re
 import subprocess
 import sys
 import time
 import urllib.error
 import urllib.request
+from email.utils import parsedate_to_datetime
 from pathlib import Path
 
 USER_AGENT = "bite-gpui distribution (https://github.com/bite-gpui)"
@@ -99,18 +111,72 @@ def patches(stage: Path, data: dict, current: str) -> list[str]:
     return flags
 
 
-def publish_one(
+# crates.io answers a publish over its leaky-bucket limit with 429 and the time
+# the next attempt is allowed: "try again after Thu, 24 Sep 2026 15:27:06 GMT".
+RATE_LIMIT = re.compile(
+    r"try again after ([A-Z][a-z]{2}, \d{1,2} [A-Z][a-z]{2} \d{4} \d{2}:\d{2}:\d{2} GMT)"
+)
+
+# Attempts per crate when the server keeps refusing. One refusal and one retry is
+# the normal case; more than that means the pacing estimate was wrong twice.
+RATE_LIMIT_ATTEMPTS = 4
+
+
+def rate_limit_retry_at(output: str) -> datetime.datetime | None:
+    """When crates.io says a publish may be attempted again, if it refused one."""
+    match = RATE_LIMIT.search(output)
+    if match is None:
+        return None
+    return parsedate_to_datetime(match.group(1))
+
+
+def run_and_show(command: list[str], cwd: Path) -> tuple[int, str]:
+    """Run a publish, echo its output as it arrives, and return the text as well.
+
+    The output has to be read to find the rate-limit message, and it has to be
+    shown, because a release waiting out a limit is otherwise silent for ten
+    minutes at a time.
+    """
+    process = subprocess.Popen(
+        command, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True
+    )
+    lines: list[str] = []
+    for line in process.stdout or ():
+        sys.stdout.write(line)
+        sys.stdout.flush()
+        lines.append(line)
+    return process.wait(), "".join(lines)
+
+
+def wait_until(moment: datetime.datetime, label: str) -> None:
+    """Sleep until `moment`, reporting what is left every five minutes."""
+    reported = None
+    while True:
+        remaining = (moment - datetime.datetime.now(datetime.timezone.utc)).total_seconds()
+        if remaining <= 0:
+            return
+        bucket = int(remaining // 300)
+        if bucket != reported:
+            print(
+                f"    {label}: {remaining / 60:.1f} minutes left, until {moment.isoformat()}",
+                file=sys.stderr,
+                flush=True,
+            )
+            reported = bucket
+        time.sleep(min(remaining, 30))
+
+
+def publish_command(
     stage: Path,
     crate: dict,
     data: dict,
     dry_run: bool,
     extra_no_verify: bool,
     no_verify: set[str],
-) -> int:
-    manifest = stage / crate["dir"] / "Cargo.toml"
+) -> list[str]:
     command = [
         "cargo", "publish",
-        "--manifest-path", str(manifest),
+        "--manifest-path", str(stage / crate["dir"] / "Cargo.toml"),
         # Staging rewrites the tree in place, so it is dirty by construction.
         "--allow-dirty",
     ]
@@ -118,8 +184,7 @@ def publish_one(
         command += ["--dry-run", *patches(stage, data, crate["published"])]
     if extra_no_verify or crate["published"] in no_verify:
         command.append("--no-verify")
-    print(f"\n==> {crate['published']} {crate['version']}" + (" (dry run)" if dry_run else ""))
-    return subprocess.run(command, cwd=stage).returncode
+    return command
 
 
 def main(argv: list[str]) -> int:
@@ -133,6 +198,9 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--commands", action="store_true",
                         help="print the cargo publish commands this would run, in order, and exit")
     parser.add_argument("--only", help="publish just this crate (comma-separated)")
+    parser.add_argument("--gap", type=float, metavar="SECONDS",
+                        help="minimum seconds between publishes; by default learned from "
+                             "crates.io's first refusal (ten minutes for a new crate name)")
     parser.add_argument("--no-verify", action="store_true")
     parser.add_argument("--allow-partial", action="store_true",
                         help="publish even though some crates are withheld")
@@ -216,17 +284,57 @@ def main(argv: list[str]) -> int:
         )
 
     skipped = []
+    # Pacing, learned from crates.io's own refusal: how long a refusal implied we
+    # must leave between publishes, and the moment it named as the next attempt.
+    # `--gap` seeds the interval, so a resumed run that already knows the limit
+    # never has to be refused to find out.
+    interval: float | None = args.gap
+    earliest: datetime.datetime | None = None
+
     for name in selected:
         crate = by_name[name]
         if not args.dry_run and not args.force and registry_has(name, crate["version"]):
             print(f"--> {name} {crate['version']} is already published; skipping")
             skipped.append(name)
             continue
-        code = publish_one(stage, crate, data, args.dry_run, args.no_verify, no_verify)
+
+        command = publish_command(stage, crate, data, args.dry_run, args.no_verify, no_verify)
+        print(f"\n==> {crate['published']} {crate['version']}" + (" (dry run)" if args.dry_run else ""))
+        code = 1
+        for attempt in range(1, RATE_LIMIT_ATTEMPTS + 1):
+            if earliest is not None:
+                wait_until(earliest, f"{name} is rate limited by crates.io")
+            started = datetime.datetime.now(datetime.timezone.utc)
+            code, output = run_and_show(command, stage)
+            if code == 0:
+                break
+            retry_at = rate_limit_retry_at(output)
+            if retry_at is None:
+                break
+            implied = (retry_at - started).total_seconds()
+            interval = max(implied, interval or 0) + 20
+            earliest = retry_at + datetime.timedelta(seconds=20)
+            print(
+                f"    crates.io refused this publish: the next attempt is allowed at "
+                f"{retry_at.isoformat()}, which implies one new crate every "
+                f"{implied / 60:.1f} minutes. Pacing the rest of the release at "
+                f"{interval / 60:.1f} minutes instead of being refused again.",
+                file=sys.stderr,
+                flush=True,
+            )
         if code != 0:
             print(f"\nFAILED at {name}; the crates before it are published and this run can be "
                   f"resumed with `--only {name}` once the cause is fixed", file=sys.stderr)
             return code
+
+        # The server counts a publish when it accepts it, so the next one has to
+        # wait from now.
+        if interval is not None and not args.dry_run:
+            earliest = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(
+                seconds=interval
+            )
+        else:
+            earliest = None
         if not args.dry_run:
             if not wait_for_visibility(name, crate["version"]):
                 print(f"{name} {crate['version']} did not become visible through the crates.io API",

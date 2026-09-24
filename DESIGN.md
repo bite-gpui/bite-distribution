@@ -546,6 +546,17 @@ publisher waits for the registry to acknowledge each upload before continuing.
 Its API answers 403 to a request that carries no `User-Agent`, which is a
 silent trap for anything polling it by hand.
 
+**Rate limits are the real cost of a first release.** crates.io allows a burst of
+five new crate *names* per account and then one every ten minutes, and a burst of
+thirty new *versions* of existing crates followed by one a minute. It answers the
+sixth new name with 429 and the time the next attempt is allowed, so a target's
+first release of thirty-one names takes about four hours and its second takes
+about half an hour. That is why the publisher waits for the named time and
+retries instead of failing, and why it then paces the rest of the release by the
+interval the refusal implied: the server states the rule, so the publisher learns
+it rather than hard-coding it, and `--gap` seeds the interval for a run that
+already knows it.
+
 **A first publish also claims the names.** crates.io assigns a new crate name to
 the token that uploads it first, and adding an owner afterwards is a crate at a
 time. Publishing with a token that belongs to the `bite-gpui` organisation, or
