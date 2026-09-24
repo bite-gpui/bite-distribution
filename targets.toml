@@ -85,10 +85,12 @@ lineage = "zed"
 roots = ["gpui", "gpui_parley"]
 version_from = "release-tag"
 upstream = "1.20.2"
-# `gpui_parley` reached outside its own directory for the fonts it embeds, so the
-# tarball it packaged could not be compiled back; the fix is new content, which a
-# release branch pays for with the next amendment (DESIGN §6).
-amendment = 1
+# Two fixes so far, each new content on a release branch, which DESIGN §6 charges
+# the next amendment: `gpui_parley` reached outside its own directory for the
+# fonts it embeds, so the tarball it packaged could not be compiled back, and the
+# `gpui_authoring` tests that share the process-global trace state raced, failing
+# one, four and one test on three consecutive runs.
+amendment = 2
 
 [[target]]
 name = "bite_v1.21.0-pre"
