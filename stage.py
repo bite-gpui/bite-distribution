@@ -402,6 +402,26 @@ def rewrite_dep_specs(lines: list[str], label: str, plan: dict[str, dict], repor
             cursor = found[1] + 1
 
 
+def crate_has_tests(crate_dir: Path) -> bool:
+    """Whether a crate declares any tests.
+
+    A test binary links the whole stack, and the facade declares twenty-five
+    examples that each link it too — which is what exhausted the CI runner. So
+    the test step covers the crates that have tests, and `cargo check
+    --all-targets` covers everything else, examples included.
+    """
+    if (crate_dir / "tests").is_dir():
+        return True
+    for source in list(crate_dir.glob("src/**/*.rs")) + list(crate_dir.glob("tests/**/*.rs")):
+        try:
+            text = source.read_text(errors="ignore")
+        except OSError:
+            continue
+        if "#[cfg(test)]" in text or "#[test]" in text:
+            return True
+    return False
+
+
 def write_notice(crate_dir: Path, target: dict, version: str, license_id: str | None) -> None:
     """The prominent notice Apache-2.0 §4(b) requires of a modified work."""
     if not (license_id or "").startswith(APACHE):
@@ -554,6 +574,7 @@ def stage(target: dict, source: Path, report_path: Path | None, strict: bool = F
                 "lib": crate["lib_name"],
                 "dir": crate["dir"],
                 "license": license_id,
+                "tests": crate_has_tests(crate_dir),
             }
         )
 
@@ -585,6 +606,11 @@ def stage(target: dict, source: Path, report_path: Path | None, strict: bool = F
     ]
     report["native"] = [
         crate["published"] for crate in report["crates"] if crate["original"] not in WASM_ONLY
+    ]
+    report["tested"] = [
+        crate["published"]
+        for crate in report["crates"]
+        if crate["tests"] and crate["original"] not in WASM_ONLY
     ]
     report["wasm_only"] = [
         crate["published"] for crate in report["crates"] if crate["original"] in WASM_ONLY
@@ -622,7 +648,7 @@ def stage(target: dict, source: Path, report_path: Path | None, strict: bool = F
     print(f"crates   {len(report['crates'])}  dependency rewrites {len(rewrites)} "
           f"({substituted} git substitutions)  licences copied {len(report['licensed'])}")
     print(f"checks   {len(report['native'])} native, {len(report['wasm_only'])} wasm-only, "
-          f"{len(report['blocked'])} withheld")
+          f"{len(report['tested'])} with tests, {len(report['blocked'])} withheld")
     if report["patched_git"]:
         print("patched deps (no manifest edit; the published manifest carries the registry version):")
         for entry in report["patched_git"]:

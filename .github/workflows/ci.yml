@@ -26,6 +26,14 @@ env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
   CARGO_INCREMENTAL: 0
+  # The branch sets `debug = "limited"` in `[profile.dev]`, and a debug build of
+  # the whole closure exhausted the runner's disk while linking: the linker died
+  # with a bus error, which on Linux means it ran out of space for its output.
+  # Debug information is worth nothing here — nothing gets debugged and the
+  # artifacts are thrown away — and turning it off shrinks those links by
+  # roughly an order of magnitude.
+  CARGO_PROFILE_DEV_DEBUG: '0'
+  CARGO_PROFILE_TEST_DEBUG: '0'
 
 permissions:
   contents: read
@@ -94,6 +102,7 @@ jobs:
       fail-fast: false
       matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
     runs-on: ubuntu-latest
+    timeout-minutes: 75
     steps:
       - uses: actions/checkout@v5
 

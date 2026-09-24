@@ -422,6 +422,25 @@ which pulls the whole stack. zed keeps its Debian/Ubuntu list in `script/linux`,
 and that is the source of truth for the rest — minus its gtk and webkit entries,
 which are for editor crates the closure does not contain.
 
+**The gate is bounded by the runner, and two settings keep it inside that.**
+A debug build of the closure exhausted a runner's disk, and the linker died with
+a bus error — on Linux, the signal a process gets when the file-backed page it
+is writing to cannot be extended. So:
+
+- `CARGO_PROFILE_DEV_DEBUG=0` and `CARGO_PROFILE_TEST_DEBUG=0` override the
+  branch's `debug = "limited"`. Nothing here is debugged and every artifact is
+  thrown away; turning debug information off shrinks the link step by about an
+  order of magnitude, and shortens the build, which was the other complaint.
+- the test step uses `--lib --tests` rather than `--all-targets`, because
+  `cargo test`'s default selection also *builds every example* and the facade
+  declares twenty-five of them, each linking the whole stack. Examples are still
+  type-checked by check and clippy, which do not link; what is given up is
+  verifying that they link, which no consumer ever does.
+- the test step covers only the crates that declare tests (24 of the 30 in
+  1.20.2), computed from the sources rather than listed. A test binary links the
+  whole stack, so testing a crate that has none is pure cost; its lib is still
+  checked.
+
 **The wasm-only crates are excluded from the native run and are not yet checked
 at all.** `gpui_web` includes its modules under
 `cfg(any(target_family = "wasm", test))` while their dependencies (`gpui_engine`,

@@ -112,9 +112,9 @@ The workflows need `SOURCE_READ_TOKEN` if the source repository is private, and
 
 Both lineages stage from a realistic CI checkout. `bite_v1.20.2` was cloned at
 `--depth 1` with tags fetched the way the workflow does, staged to 31 crates at
-`1.20.200` (39 dependency rewrites, 9 git substitutions, 5 licences copied);
-`bite_ce_main` staged to 26 crates, 32 rewrites, reporting 4 withheld rather than
-failing.
+`1.20.200` (39 dependency rewrites, 9 git substitutions, 5 licences copied),
+splitting into 30 native, 1 wasm-only and 24 with tests; `bite_ce_main` staged to
+26 crates, 35 rewrites, reporting 4 withheld rather than failing.
 
 Also verified: `cargo metadata` resolves the whole staged workspace for both
 lineages — 775 packages for ce, including the crates outside its closure that

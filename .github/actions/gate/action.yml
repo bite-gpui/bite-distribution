@@ -59,6 +59,7 @@ runs:
         report = json.loads(pathlib.Path("dist-stage.json").read_text())
         with open(os.environ["GITHUB_OUTPUT"], "a") as outputs:
             outputs.write("native=" + " ".join(report["native"]) + "\n")
+            outputs.write("tested=" + " ".join(report.get("tested", [])) + "\n")
             outputs.write("wasm=" + " ".join(report.get("wasm_only", [])) + "\n")
         for entry in report.get("blocked", []):
             print(f"::warning title=withheld::{entry['published']} is withheld: {entry['reason']}")
@@ -90,14 +91,20 @@ runs:
         args=(); for package in "${packages[@]}"; do args+=(-p "$package"); done
         cargo clippy "${args[@]}" --all-targets --all-features -- -D warnings
 
+    # `--lib --tests`, not `--all-targets`: the default selection for `cargo
+    # test` also builds every example, and the facade declares twenty-five of
+    # them, each linking the whole stack in a debug profile. That is what killed
+    # the link step of an earlier run with a bus error, which on Linux means the
+    # linker ran out of address space for its output. Examples are still
+    # type-checked, by the check and clippy steps above.
     - name: Test
       if: inputs.test == 'true'
       shell: bash
       working-directory: ${{ inputs.stage }}
       run: |
-        read -ra packages <<< "${{ steps.report.outputs.native }}"
+        read -ra packages <<< "${{ steps.report.outputs.tested }}"
         args=(); for package in "${packages[@]}"; do args+=(-p "$package"); done
-        cargo test "${args[@]}" --all-features
+        cargo test "${args[@]}" --all-features --lib --tests
 
     # `--list` is the cheap half of packaging, and it is where a missing licence
     # or a build.rs that reads an excluded file shows up.
