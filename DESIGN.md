@@ -409,12 +409,40 @@ in `bench_context` and `profiler::hang`.
 3. `cargo check -p <native closure> --all-targets --all-features` — zero warnings.
 4. `cargo clippy -p <native closure> --all-targets --all-features -- -D warnings`.
 5. `cargo test -p <native closure> --all-features`.
-6. `cargo package --list --allow-dirty` for every publishable crate — the file
-   set that would be uploaded, which is where a missing licence or a `build.rs`
-   reading an excluded file shows up.
+6. `check_reads.py` — for every publishable crate, `cargo package --list` gives
+   the file set that would be uploaded, and every path the crate names at build
+   time has to be inside it. See below.
 7. `publish.py --dry-run` — packages each crate and compiles it in isolation,
    which is the only check that the published artifact builds. `--allow-dirty`
    is required throughout because staging rewrites the tree in place.
+8. `test_isolated.py` — unpacks every publishable archive into a directory with
+   no sibling of the workspace and compiles it there. The dry run already does
+   this for most crates, but it skips the ones in `no_verify`, and those are
+   exactly the crates whose tarball nothing else looks inside.
+
+**The gate has to be able to see a crate that reads outside itself, and it could
+not.** `gpui_apple`'s build script fed cbindgen five shader sources located by
+walking up out of the crate — `CARGO_MANIFEST_DIR/../gpui_types/src/color.rs` —
+which the workspace layout made work and which every published tarball failed on
+with `ParseCannotOpenFile`. Nothing in the gate noticed: the code is behind
+`#[cfg(target_os = "macos")]`, so a Linux runner never compiles it, and
+`gpui_apple` is in `no_verify`, so the dry run never extracted its tarball
+either. Step 6 is the answer. It reads the paths a build script names, plus the
+`include_bytes!`/`include_str!`/`#[path]` of every source in the archive, and a
+path that resolves outside the crate — or inside it but not packaged — fails.
+The sources are now vendored under `crates/gpui_apple/vendor/`, which the
+archive carries, and the same fix is on every branch back to 1.14.
+
+The rule is deliberately coarse, because the failure it exists for does not need
+a clever one: a literal that names something existing relative to the crate
+directory is taken to be a path the build reads, and no `join` chain is
+followed, since the upward step is its own literal. A reference inside
+`#[cfg(test)]`, or under `tests/`, `examples/` or `benches/`, is a warning rather
+than a failure — it is not compiled when the crate is built as a dependency, so
+it cannot break the published artifact. The fonts `gpui_wgpu`'s tests and
+`gpui_authoring`'s image fixture read from `../../../assets/` are of that kind,
+and they are why the distinction is drawn rather than the check being made
+stricter.
 
 The closure is passed as explicit `-p` flags rather than `--workspace`: the
 checkout carries all ~250 zed crates, and checking them is neither wanted nor
@@ -518,7 +546,12 @@ different leaf sets.
 - **stage** (matrix) checks the target branch out, stages it, and runs the gate.
   A pull request stages one target per lineage (`default`); dispatch with `all`
   when a change could affect every branch. Ten cold builds of gpui on every push
-  is hours of CI for a change to a script.
+  is hours of CI for a change to a script. The matrix carries a runner label per
+  leg, so `platforms` can add a `macos-14` leg to every selected target — the
+  only way the Apple backends' build script is ever compiled, since it is behind
+  `cfg(target_os = "macos")` and a Linux runner never sees it. It defaults to
+  Linux alone, and the labels are declared once, in `targets.py --matrix`, rather
+  than in the workflow.
 
 `.github/actions/gate/action.yml` is the gate itself, shared by both workflows,
 so "the release workflow runs the same checks as a pull request" holds by
@@ -544,12 +577,12 @@ runs are trustworthy; it is deliberately not there yet.
 
 ## 13. Open decisions
 
-### 13.1 Where the project lives
-`.dist/` is ignored in the zed clone (like `.tools/`) and currently unpublished.
-For CI it needs a home. Recommended: its own repository
-`git@github.com:bite-gpui/dist.git`, since publishing is a separate concern from
-the architecture work and its history should not be tangled with it. The
-alternative is a directory in the existing `bite-gpui/tools` repo.
+### 13.1 Where the project lives — **decided: `bite-gpui/distribution`**
+`.dist/` is ignored in the zed clone (like `.tools/`). It lives at
+`git@github.com:bite-gpui/distribution.git`, as its own repository, because
+publishing is a separate concern from the architecture work and its history
+should not be tangled with it. `.tools/` is likewise its own repository,
+`bite-gpui/tools`, since the migration scripts are a third concern again.
 
 ### 13.2 Two namespaces — **decided: two**
 

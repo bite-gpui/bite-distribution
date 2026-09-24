@@ -17,6 +17,10 @@ on:
         description: 'which targets to stage: default, all, zed, ce, or a comma-separated list'
         required: false
         default: default
+      platforms:
+        description: 'runner labels, comma-separated: ubuntu-latest, or add macos-14 to compile the Apple backends'
+        required: false
+        default: ubuntu-latest
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -91,17 +95,17 @@ jobs:
           python-version: '3.13'
       - id: matrix
         run: |
-          matrix="$(python3 targets.py --matrix --select '${{ inputs.targets || 'default' }}')"
+          matrix="$(python3 targets.py --matrix --select '${{ inputs.targets || 'default' }}' --platforms '${{ inputs.platforms || 'ubuntu-latest' }}')"
           echo "$matrix"
           echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
 
   stage:
-    name: ${{ matrix.target }}
+    name: ${{ matrix.target }} on ${{ matrix.os }}
     needs: plan
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 75
     steps:
       - uses: actions/checkout@v5
@@ -112,6 +116,12 @@ jobs:
           ref: ${{ matrix.branch }}
           path: src
           token: ${{ secrets.SOURCE_READ_TOKEN || secrets.GITHUB_TOKEN }}
+
+      # stage.py reads the manifests with tomllib, which is 3.11 and later; the
+      # runner's own python3 is too old for that on macOS.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
 
       # The published version is the version the branch tip is tagged with, so a
       # depth-1 checkout is enough — but the tags still have to be fetched, and
@@ -144,7 +154,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src -> target
-          key: ${{ matrix.target }}
+          key: ${{ matrix.target }}-${{ matrix.os }}
 
       - name: Stage
         run: python3 stage.py --target '${{ matrix.target }}' --source src
@@ -157,6 +167,6 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: stage-${{ matrix.target }}
+          name: stage-${{ matrix.target }}-${{ matrix.os }}
           path: src/dist-stage.json
           if-no-files-found: ignore

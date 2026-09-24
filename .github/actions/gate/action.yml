@@ -11,7 +11,7 @@
 # on `gpui_authoring::Window::present_if_needed`, whose only callers are in
 # `bench_context` and `profiler::hang`.
 name: Gate a staged target
-description: Resolve, check, lint, test, package-check and dry-run a staged target
+description: Resolve, check, lint, test, package-check, dry-run and unpack-and-build a staged target
 
 inputs:
   stage:
@@ -19,6 +19,10 @@ inputs:
     required: true
   test:
     description: run the closure's tests
+    required: false
+    default: 'true'
+  isolated:
+    description: compile the unpacked archives in a directory with no siblings
     required: false
     default: 'true'
 
@@ -34,6 +38,10 @@ runs:
     # gtk and webkit entries are for the editor crates, which the closure does
     # not contain.
     - name: Install system dependencies
+      # The list is Debian's; a macOS leg needs none of it, and the gate runs
+      # there to compile the Apple backends, whose build script is the only code
+      # that can read the vendored shader types.
+      if: runner.os == 'Linux'
       shell: bash
       run: |
         sudo apt-get update
@@ -106,17 +114,16 @@ runs:
         args=(); for package in "${packages[@]}"; do args+=(-p "$package"); done
         cargo test "${args[@]}" --all-features --lib --tests
 
-    # `--list` is the cheap half of packaging, and it is where a missing licence
-    # or a build.rs that reads an excluded file shows up.
+    # `--list` is the cheap half of packaging. `check_reads.py` turns it into a
+    # check: every path a crate names at build time has to be inside the crate and
+    # in the archive. That is the only place the `gpui_apple` defect was visible —
+    # its build script read shader types from a sibling crate, which the workspace
+    # supplied and the tarball did not, and the crate is in `no_verify` so the
+    # dry-run resolution below never saw it either.
     - name: Package file sets
       shell: bash
       working-directory: ${{ inputs.stage }}
-      run: |
-        set -euo pipefail
-        while read -r dir; do
-          echo "--- $dir"
-          cargo package --list --allow-dirty --manifest-path "$dir/Cargo.toml"
-        done < <(python3 "$GITHUB_WORKSPACE/publish.py" --stage . --dirs)
+      run: python3 "$GITHUB_WORKSPACE/check_reads.py" --stage .
 
     # The dry run is the closing gate: it packages each crate and compiles it
     # in isolation, which is the only check that the published artifact builds.
@@ -125,3 +132,17 @@ runs:
       shell: bash
       working-directory: ${{ inputs.stage }}
       run: python3 "$GITHUB_WORKSPACE/publish.py" --stage . --dry-run
+
+    # The closing gate. `cargo publish --dry-run` compiles each tarball, but it
+    # skips the crates in `no_verify` — and those are the ones whose packaging is
+    # hardest to get right, because nothing else in the pipeline looks inside
+    # their archive. This unpacks every publishable crate into a directory that
+    # has no sibling of the workspace and compiles it there, so a crate that
+    # builds from the checkout and not from its tarball fails here.
+    # `gpui_apple`'s build script read shader types from a sibling crate, and
+    # `gpui_apple` is in `no_verify`: this is the step that fails on it.
+    - name: Isolated build
+      if: inputs.isolated == 'true'
+      shell: bash
+      working-directory: ${{ inputs.stage }}
+      run: python3 "$GITHUB_WORKSPACE/test_isolated.py" --stage .

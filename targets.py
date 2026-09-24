@@ -257,6 +257,10 @@ def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--validate", action="store_true")
     parser.add_argument("--matrix", action="store_true")
+    parser.add_argument("--platforms", default="ubuntu-latest",
+                        help="comma-separated runner labels; one matrix leg per target "
+                             "per label, so `--platforms ubuntu-latest,macos-14` adds a "
+                             "macOS build of every selected target")
     parser.add_argument("--refs", action="store_true",
                         help="emit repository= and <lineage>=<branch> lines for $GITHUB_OUTPUT")
     parser.add_argument("--tags", action="store_true",
@@ -317,14 +321,19 @@ def main(argv: list[str]) -> int:
         return 0
 
     if args.matrix:
+        platforms = [platform.strip() for platform in args.platforms.split(",") if platform.strip()]
+        if not platforms:
+            raise SystemExit("--platforms selected no runners")
         print(json.dumps({
             "include": [
                 {
                     "target": t["name"],
                     "repository": repository_slug(t),
                     "branch": t["branch"],
+                    "os": platform,
                 }
                 for t in chosen
+                for platform in platforms
             ]
         }))
     elif args.names:
