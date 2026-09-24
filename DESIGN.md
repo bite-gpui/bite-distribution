@@ -406,6 +406,14 @@ affordable on every push. Withheld crates (§8) are still checked — they build
 they just cannot be published — so the gate covers 55 of the 57 names in the
 union.
 
+**System packages are the union of two lists**, and the first gate run failed for
+want of the second. ce's publish job installs nine packages, which was enough to
+*package* crates but not to *link test binaries*: the run died at the linker with
+`unable to find library -lX11-xcb` while linking `gpui_macros`'s `render_test`,
+which pulls the whole stack. zed keeps its Debian/Ubuntu list in `script/linux`,
+and that is the source of truth for the rest — minus its gtk and webkit entries,
+which are for editor crates the closure does not contain.
+
 **The wasm-only crates are excluded from the native run and are not yet checked
 at all.** `gpui_web` includes its modules under
 `cfg(any(target_family = "wasm", test))` while their dependencies (`gpui_engine`,
