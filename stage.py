@@ -345,33 +345,88 @@ def dedupe(entries: list[dict]) -> list[dict]:
     return sorted(merged.values(), key=lambda e: (e["in"], e["package"]))
 
 
+def dependency_name(key: str, entry: dict) -> str:
+    """The workspace package a dependency entry resolves to."""
+    return entry.get("package") or entry.get("path_package") or key
+
+
+def workspace_dependencies(crate: dict, include_dev: bool):
+    """The crate's dependencies that resolve to workspace packages.
+
+    A dependency that is not a path is not a workspace one: it comes from the
+    registry and resolves the same way in a tarball as it does here.
+    """
+    for key, entries in crate["deps"].items():
+        for entry in entries:
+            if entry["kind"] not in ("path", "workspace"):
+                continue
+            if not include_dev and "dev-dependencies" in entry["where"]:
+                continue
+            yield dependency_name(key, entry)
+
+
+def depends_on_itself(crates: dict, package: str) -> bool:
+    """Whether resolving `package` reaches `package` again.
+
+    Dev-dependencies count only for the crate at the root of the graph, which is
+    how cargo resolves: a package's own dev-dependencies are in its lockfile, a
+    dependency's are not.
+    """
+    seen: set[str] = set()
+    queue: list[str] = []
+    for dependency in workspace_dependencies(crates[package], include_dev=True):
+        if dependency in crates and dependency not in seen:
+            seen.add(dependency)
+            queue.append(dependency)
+    while queue:
+        node = queue.pop()
+        for dependency in workspace_dependencies(crates[node], include_dev=False):
+            if dependency == package:
+                return True
+            if dependency in crates and dependency not in seen:
+                seen.add(dependency)
+                queue.append(dependency)
+    return False
+
+
 def unverifiable(crates: dict, order: list[str], published: dict[str, str]) -> list[str]:
     """Crates `cargo publish` cannot verify, so they are published with --no-verify.
 
-    Verification resolves a tarball's manifest before compiling it, and
-    resolution takes in the root package's dev-dependencies for every target, so
-    a dev-dependency behind a cfg for some other platform still has to resolve.
-    A crate whose dev-dependency is published after it (the facade is published
-    last, and the platform backends dev-depend on it for their tests) or is a
-    workspace path that is never published (zed-internal crates like
-    `reqwest_client`) therefore cannot be verified on a first release. It is
-    still packaged and its manifest still normalised; only the isolated
-    compilation is skipped, and the gate's workspace-wide check covers that.
+    Verification resolves a tarball's manifest before compiling it, and the
+    normalised manifest pins every dependency to a registry version — including
+    the dev-dependencies, which cargo resolves for the root package for every
+    target, cfg-gated or not. A crate therefore cannot be verified while one of
+    its dev-dependencies has no version to resolve: a crate published later in
+    the order (the facade is published last) or a workspace path outside the
+    closure, which is never published at all.
+
+    A crate that depends on itself cannot be verified either, because the
+    patches a dry run supplies put a second copy of it into the lockfile and
+    cargo refuses two packages with one name and version. `gpui_authoring` is
+    the case that is easy to miss: it does not name the facade, but its
+    dev-dependencies reach it, and the facade depends on `gpui_authoring` back.
+
+    Such a crate is still packaged and its manifest still normalised; only the
+    isolated compilation is skipped, and the gate's workspace-wide check covers
+    what that would have found.
     """
     position = {package: index for index, package in enumerate(order)}
-    names = []
+    names = set()
     for package in order:
+        if depends_on_itself(crates, package):
+            names.add(package)
+            continue
         for key, entries in crates[package]["deps"].items():
             for entry in entries:
                 if "dev-dependencies" not in entry["where"]:
                     continue
                 if entry["kind"] not in ("path", "workspace"):
                     continue
-                dependency = entry.get("package") or entry.get("path_package") or key
+                dependency = dependency_name(key, entry)
                 if dependency in position and position[dependency] < position[package]:
                     continue
-                names.append(published[package])
-    return sorted(set(names))
+                names.add(package)
+    return sorted(published[name] for name in names)
 
 
 def label_of(source: Path, manifest: Path, root: Path) -> str:
