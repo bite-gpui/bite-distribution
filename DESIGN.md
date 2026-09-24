@@ -423,13 +423,22 @@ in `bench_context` and `profiler::hang`.
 6. `check_reads.py` — for every publishable crate, `cargo package --list` gives
    the file set that would be uploaded, and every path the crate names at build
    time has to be inside it. See below.
-7. `publish.py --dry-run` — packages each crate and compiles it as the root of a
+7. `apple_build_check.py` — the Apple crate's build script feeds cbindgen five
+   shader sources and sits behind `cfg(target_os = "macos")`, which cargo
+   evaluates against the *host*: no runner this project has ever ran it. This
+   strips that gate and the two shader-compilation calls (both asserted, so a
+   change in the script's shape fails loudly), points the script at the crate's
+   own `vendor/` and `metal_renderer.rs`, and so runs cbindgen on Linux. Step 6
+   finds the same class of defect statically from the archive; this one shows
+   cbindgen's own message. It takes whichever crate feeds cbindgen on that branch
+   — `gpui_macos` for 1.14 to 1.16, `gpui_apple` from 1.17.
+8. `publish.py --dry-run` — packages each crate and compiles it as the root of a
    build, which is the only check that the published artifact builds. Resolving a
    root's *dev*-dependencies is part of that, so a crate whose dev-dependencies
    cannot resolve is published with `--no-verify` and its compilation is skipped.
    `--allow-dirty` is required throughout because staging rewrites the tree in
    place.
-8. `test_isolated.py` — packages and unpacks every publishable archive, then
+9. `test_isolated.py` — packages and unpacks every publishable archive, then
    compiles a generated crate that depends on all of them. That is what closes
    the `no_verify` gap above: a consumer resolves a dependency's normal
    dependencies and never its dev-dependencies. It is also the only check that
@@ -574,6 +583,24 @@ the token that uploads it first, and adding an owner afterwards is a crate at a
 time. Publishing with a token that belongs to the `bite-gpui` organisation, or
 adding the organisation as an owner as soon as the first crate of each name
 lands, is the difference between one step and thirty-one.
+
+**A name has to exist before anything may name it, and that is the wall a first
+release hits.** crates.io validates every dependency *name* in a manifest before
+it accepts an upload, dev-dependencies included, so a crate cannot name one that
+is not there yet. Six of 1.20.203's crates name the facade from their
+dev-dependencies, and the facade is published last by construction, because its
+own normal dependencies include three of them. Neither ordering nor `--no-verify`
+resolves that: the compilation is skipped and the name check still happens.
+
+It is settled by reserving the name **once**: `bite-gpui` was published as
+`0.0.0-reserved`, a stub, before the first crate that names it, and the six then
+published with their manifests untouched. Later releases need nothing, because
+they publish new versions of a name that already exists, and every published
+manifest stays faithful — which dropping those dev-dependencies would not: the six
+crates' own test suites would stop compiling from the registry, on every release,
+forever. That also corrects how §10 talks about them: they were never merely
+"unverifiable", they were **unpublishable**, and what makes them publishable is a
+reservation rather than an edit.
 
 **Branch order is free, but the newest branch should still go first.** The eight
 release targets publish the same names at different versions (`1.14.202`,
