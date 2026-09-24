@@ -13,11 +13,20 @@ them.
 **Verification of a first release.** `cargo publish` resolves a dependency with
 a `version` from the registry, not from its `path`. A dependency-ordered first
 release therefore fails at the second crate: its newly-versioned predecessor has
+dependency-ordered first release therefore fails at the second crate: its newly-versioned predecessor has
 not been uploaded yet. For dry runs every crate in the set is patched into the
 temporary verification resolution, so `cargo publish` still packages and
 compiles each tarball, but validates the local release graph instead of stale
 registry versions. The patches are passed on the command line and never appear
 in a published manifest.
+
+**What cannot be verified.** Resolution also takes in the root package's own
+dev-dependencies, and it is target-agnostic, so a crate that dev-depends on a
+crate published after it (the facade is published last) or on a workspace crate
+that is never published cannot be verified at all on a first release. stage.py
+reports those as `no_verify`; they are packaged with `--no-verify`, which still
+normalises the manifest, and the gate's workspace-wide check and clippy cover
+the compilation that skips.
 
 Usage:
     publish.py --stage wt/bite_v1.20.2 --list
@@ -38,10 +47,6 @@ import urllib.request
 from pathlib import Path
 
 USER_AGENT = "bite-gpui distribution (https://github.com/bite-gpui)"
-# The facade packages a crate cycle cargo cannot express in one verification
-# lockfile (test-only edges in both directions with the platform crates); the
-# workspace-wide check in CI covers the compilation that --no-verify skips.
-NO_VERIFY = ("bite-gpui", "bite-gpui-ce")
 
 
 def load_report(stage: Path) -> dict:
@@ -93,7 +98,14 @@ def patches(stage: Path, data: dict, current: str) -> list[str]:
     return flags
 
 
-def publish_one(stage: Path, crate: dict, data: dict, dry_run: bool, extra_no_verify: bool) -> int:
+def publish_one(
+    stage: Path,
+    crate: dict,
+    data: dict,
+    dry_run: bool,
+    extra_no_verify: bool,
+    no_verify: set[str],
+) -> int:
     manifest = stage / crate["dir"] / "Cargo.toml"
     command = [
         "cargo", "publish",
@@ -103,7 +115,7 @@ def publish_one(stage: Path, crate: dict, data: dict, dry_run: bool, extra_no_ve
     ]
     if dry_run:
         command += ["--dry-run", *patches(stage, data, crate["published"])]
-    if extra_no_verify or crate["published"] in NO_VERIFY:
+    if extra_no_verify or crate["published"] in no_verify:
         command.append("--no-verify")
     print(f"\n==> {crate['published']} {crate['version']}" + (" (dry run)" if dry_run else ""))
     return subprocess.run(command, cwd=stage).returncode
@@ -131,6 +143,7 @@ def main(argv: list[str]) -> int:
     order = data["order"]
     by_name = {crate["published"]: crate for crate in data["crates"]}
     withheld = {entry["published"]: entry["reason"] for entry in data.get("blocked", [])}
+    no_verify = set(data.get("no_verify", []))
 
     if args.list:
         if args.list == "native":
@@ -172,6 +185,14 @@ def main(argv: list[str]) -> int:
         print("CARGO_REGISTRY_TOKEN is not set", file=sys.stderr)
         return 2
 
+    if no_verify:
+        print(
+            "packaging without verification (their dev-dependencies cannot resolve "
+            f"until other crates in this release are on the registry): "
+            f"{', '.join(sorted(no_verify))}",
+            file=sys.stderr,
+        )
+
     skipped = []
     for name in selected:
         crate = by_name[name]
@@ -179,7 +200,7 @@ def main(argv: list[str]) -> int:
             print(f"--> {name} {crate['version']} is already published; skipping")
             skipped.append(name)
             continue
-        code = publish_one(stage, crate, data, args.dry_run, args.no_verify)
+        code = publish_one(stage, crate, data, args.dry_run, args.no_verify, no_verify)
         if code != 0:
             print(f"\nFAILED at {name}; the crates before it are published and this run can be "
                   f"resumed with `--only {name}` once the cause is fixed", file=sys.stderr)

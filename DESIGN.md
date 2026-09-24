@@ -496,13 +496,16 @@ this is the only way a multi-crate release is sane.
 and the next crate in the order depends on the one just uploaded, so the
 publisher waits for the registry to acknowledge each upload before continuing.
 
-Two caveats, both inherited from ce's own release and both deliberate:
-`bite-gpui` and `bite-gpui-ce` are published with `--no-verify`, because the
-facades have test-only crate cycles with the platform crates that cargo cannot
-represent in one verification lockfile — the workspace-wide `cargo check` in the
-gate covers the compilation that skips. And the order comes from the manifests
-rather than a hand-kept list, because the two lineages and eight release targets
-have different leaf sets.
+Two caveats, both inherited from ce's own release and both deliberate. Some
+crates are published with `--no-verify`, because verification resolves the root
+package's dev-dependencies for every target and a first release has not uploaded
+the crate those dev-dependencies point at yet — either the facade, which is
+published last, or a zed-internal crate that is never published at all. The set
+is derived from the manifests by `stage.py` (reported as `no_verify`) rather than
+hand-kept, and the workspace-wide `cargo check` in the gate covers the
+compilation that skips. And the order comes from the manifests rather than a
+hand-kept list, because the two lineages and eight release targets have
+different leaf sets.
 
 ## 12. CI
 

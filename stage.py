@@ -345,6 +345,35 @@ def dedupe(entries: list[dict]) -> list[dict]:
     return sorted(merged.values(), key=lambda e: (e["in"], e["package"]))
 
 
+def unverifiable(crates: dict, order: list[str], published: dict[str, str]) -> list[str]:
+    """Crates `cargo publish` cannot verify, so they are published with --no-verify.
+
+    Verification resolves a tarball's manifest before compiling it, and
+    resolution takes in the root package's dev-dependencies for every target, so
+    a dev-dependency behind a cfg for some other platform still has to resolve.
+    A crate whose dev-dependency is published after it (the facade is published
+    last, and the platform backends dev-depend on it for their tests) or is a
+    workspace path that is never published (zed-internal crates like
+    `reqwest_client`) therefore cannot be verified on a first release. It is
+    still packaged and its manifest still normalised; only the isolated
+    compilation is skipped, and the gate's workspace-wide check covers that.
+    """
+    position = {package: index for index, package in enumerate(order)}
+    names = []
+    for package in order:
+        for key, entries in crates[package]["deps"].items():
+            for entry in entries:
+                if "dev-dependencies" not in entry["where"]:
+                    continue
+                if entry["kind"] not in ("path", "workspace"):
+                    continue
+                dependency = entry.get("package") or entry.get("path_package") or key
+                if dependency in position and position[dependency] < position[package]:
+                    continue
+                names.append(published[package])
+    return sorted(set(names))
+
+
 def label_of(source: Path, manifest: Path, root: Path) -> str:
     if manifest == root:
         return "Cargo.toml (workspace)"
@@ -510,6 +539,8 @@ def stage(target: dict, source: Path, report_path: Path | None, strict: bool = F
     for package in order:
         published[package] = naming.published_name(package, target["lineage"])
 
+    report["no_verify"] = unverifiable(crates, order, published)
+
     edits = dep_edits(source, crates, names, published, version)
     report["unresolved_git"] = dedupe(edits["blockers"])
     report["dev_only_git"] = dedupe(edits["advisories"])
@@ -648,7 +679,8 @@ def stage(target: dict, source: Path, report_path: Path | None, strict: bool = F
     print(f"crates   {len(report['crates'])}  dependency rewrites {len(rewrites)} "
           f"({substituted} git substitutions)  licences copied {len(report['licensed'])}")
     print(f"checks   {len(report['native'])} native, {len(report['wasm_only'])} wasm-only, "
-          f"{len(report['tested'])} with tests, {len(report['blocked'])} withheld")
+          f"{len(report['tested'])} with tests, {len(report['blocked'])} withheld, "
+          f"{len(report['no_verify'])} packaged without verification")
     if report["patched_git"]:
         print("patched deps (no manifest edit; the published manifest carries the registry version):")
         for entry in report["patched_git"]:
