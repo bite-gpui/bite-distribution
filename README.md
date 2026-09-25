@@ -52,8 +52,9 @@ being released.
 | `targets.toml` | the twelve target branches, their lineage, version scheme and URLs |
 | `inventory.py` | resolves a checkout's in-path dependency closure, and the publish order |
 | `naming.py` | source package → published crate name; `--verify` checks it per target |
-| `targets.py` | validates and selects targets; `--tags` says what to tag; `--matrix` and `--env` feed CI |
+| `targets.py` | validates and selects targets; `--tags` says what to tag, `--for-tag` and `--for-branch` resolve the other way, `--matrix` and `--env` feed CI |
 | `stage.py` | carves a target into a publishable state |
+| `tag_release.py` | resolves a branch to the tag it must carry, refuses to move one, pushes it |
 | `publish.py` | publishes a staged target in dependency order |
 
 `inventory.py` is the load-bearing one and is useful on its own — the closures
@@ -64,6 +65,9 @@ closure needs replaced.
 ```sh
 # what would be published for this branch?
 python3 inventory.py --repo . --root gpui --root gpui_parley --summary
+
+# what tag does a branch need, and does it exist yet?
+python3 tag_release.py --branch bite_v1.21.0 --repo <a checkout of it>
 
 # every target, and the tag its branch must carry
 python3 targets.py --tags --select all
@@ -82,44 +86,58 @@ python3 publish.py --stage src --dry-run
 
 ## Releasing
 
-The version is the version the branch tip is **tagged** with, so the tag is the
-release, and pushing it is what publishes:
+The version is the version the branch tip is **tagged** with, so a release is a
+tag. The `Tag` workflow creates it and starts the publish:
 
 ```sh
-python3 targets.py --tags --select all       # what each branch must be tagged
-git tag -a bite_1.21.0 -m bite_1.21.0 && git push origin bite_1.21.0
+gh workflow run tag.yml -f branch=bite_v1.21.0               # report: which tag, does it exist
+gh workflow run tag.yml -f branch=bite_v1.21.0 -f dry_run=false   # tag it and publish
+gh workflow run tag.yml -f branch=bite_v1.21.0 -f dry_run=false -f force=true  # re-publish
 ```
 
-`.github/workflows/release.yml` runs on that push: it resolves the tag back to
-its target (`targets.py --for-tag`), runs the gate on the branch, and publishes
-with the token in the `crates-io` environment — no `cargo login`, no local
-credential file, and the release is reproducible from the tag alone. Staging
-refuses a release target whose tip is untagged and names the command, so the tag
-is the only thing that can name the version and a release cannot drift from it.
+`tag.yml` resolves the branch to its target, derives the tag from the table
+(`tag_release.py`), refuses a branch whose tip has moved under an existing tag,
+pushes the tag, and dispatches the publish. `dry_run` defaults to true and only
+reports — a report is an answer, not a failure, so it exits zero and puts the
+verdict in its summary (`untagged`, `already-tagged`, `conflict`, `rolling`).
 
-Everything else is a dispatch, which is also the dry-run path:
+`force` is for the release that was tagged and then failed to publish — a rate
+limit or a tooling bug — and finishes it by publishing the same version again,
+which resumes rather than duplicates. It never moves a tag: a tag naming a
+different commit is refused even with `force`, and the answer there is to bump the
+target's `amendment` (DESIGN §6). A rolling target has no tag at all, and `tag.yml`
+says so and dispatches the publish directly.
+
+The tag is still the contract, and still enough on its own: staging refuses a
+release target whose tip is untagged and names the command. So a tag **pushed by
+hand** starts a release through release.yml's tag trigger, without `tag.yml` — it
+is the convenient, self-documenting path, not the only one. The two cannot
+double-publish: a tag pushed by a workflow using `GITHUB_TOKEN` does not cascade
+into another run, and a hand-pushed one does; either way the publish is serialised
+and skips versions that already exist.
+
+A rolling target, or a bare dry run of the pipeline, goes straight to dispatch:
 
 ```sh
-# stage and verify a target without uploading
-gh workflow run release.yml -f target=bite_v1.21.0 -f dry_run=true
-
-# a rolling target has no release tag to push, so it is named explicitly
 gh workflow run release.yml -f target=bite_ce_main -f confirm=bite_ce_main -f dry_run=false
+gh workflow run release.yml -f target=bite_v1.21.0 -f dry_run=true
 ```
 
-**Configure the `crates-io` environment with required reviewers before relying on
-the tag trigger.** The environment is the approval gate and the only place the
-token is reachable; without reviewers, pushing a tag publishes unattended. Dry
-runs exist so a target can be validated before its tag is pushed at all.
+**Configure the `crates-io` environment with required reviewers.** It is the
+approval gate and the only place the registry token is reachable, and it is the
+last thing between a tagged release and crates.io.
 
 ## CI
 
 - `.github/workflows/ci.yml` — pull requests and `main`: validate the table and
   naming rule, then stage one target per lineage through the gate. Dispatch with
   `all` for every branch.
-- `.github/actions/gate/action.yml` — the gate, shared with the release
-  workflow: system deps, resolve, check, clippy `-D warnings`, test, package
-  file sets, publish dry run.
+- `.github/actions/gate/action.yml` — the gate, shared by the release workflows:
+  system deps, resolve, check, clippy `-D warnings`, test, package file sets,
+  publish dry run.
+- `.github/workflows/tag.yml` — the manual release step. Dispatch with the branch;
+  it resolves the tag, refuses to move one, pushes it, and dispatches
+  `release.yml`.
 - `.github/workflows/release.yml` — a `bite_*` tag push, or manual dispatch.
   Dispatch takes the target, a confirmation that must repeat it for a real
   publish, and `dry_run` (default true); a tag push resolves the target from the
@@ -127,11 +145,15 @@ runs exist so a target can be validated before its tag is pushed at all.
   `crates-io` environment, so `CARGO_REGISTRY_TOKEN` reaches exactly one step of
   one job behind an approval.
 
-The workflows need `SOURCE_READ_TOKEN` if the source repository is private, and
-`CARGO_REGISTRY_TOKEN` as a secret on the `crates-io` environment for a real
-publish. Neither is reachable from a pull request: the release workflow has no
-pull-request trigger. A local `cargo login` is now only for hand runs from a
-prepared stage tree, which is how the first release was done.
+One environment and three secrets. The environment is `crates-io`, holding
+`CARGO_REGISTRY_TOKEN` for a real publish and (recommended) required reviewers.
+The repo secrets are `SOURCE_READ_TOKEN` if the source repository is private, and
+`SOURCE_WRITE_TOKEN` with `contents: write` on the source repository — which is
+what lets `tag.yml` push a tag to a repository it does not live in, since
+`GITHUB_TOKEN` is scoped to this one and cannot. None of them is reachable from a
+pull request: no workflow here has a pull-request trigger. A local `cargo login`
+is only for hand runs from a prepared stage tree, which is how the first release
+was done.
 
 ## Validated so far
 

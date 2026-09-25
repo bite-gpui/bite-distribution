@@ -11,6 +11,7 @@ Usage:
     targets.py --matrix --select all
     targets.py --refs --select default
     targets.py --for-tag bite_1.21.0
+    targets.py --for-branch bite_v1.21.0
     targets.py --env bite_ce_main
 """
 
@@ -255,6 +256,41 @@ def branch_agrees(target: dict) -> str | None:
     return f"branch {target['branch']} declares {named}, table says {declared}"
 
 
+def target_for_name(targets: list[dict], name: str) -> dict:
+    for target in targets:
+        if target.get("name") == name:
+            return target
+    raise SystemExit(f"unknown target: {name}")
+
+
+def target_for_branch(targets: list[dict], branch: str) -> dict:
+    """The target a branch belongs to.
+
+    Resolved by `branch` rather than by `name`, though the two coincide for every
+    target in the table today: a caller that has a branch should not have to know
+    that it doubles as a name, and a target that ever names itself differently
+    must not silently resolve to the wrong one.
+    """
+    for target in targets:
+        if target.get("branch") == branch:
+            return target
+    known = ", ".join(sorted(t.get("branch", "?") for t in targets))
+    raise SystemExit(f"no target has branch {branch}. Known branches: {known}")
+
+
+def emit_env(target: dict) -> list[str]:
+    """The `key=value` lines a workflow can append to `$GITHUB_OUTPUT`."""
+    return [
+        f"target={target['name']}",
+        f"repository={repository_slug(target)}",
+        f"branch={target['branch']}",
+        f"lineage={target['lineage']}",
+        f"upstream={target.get('upstream', '')}",
+        f"amendment={target.get('amendment', 0)}",
+        f"version={version_for(target, None)}",
+    ]
+
+
 def repository_slug(target: dict) -> str:
     """`owner/repo`, which is what actions/checkout wants (not a URL)."""
     return target["url"].removeprefix("https://github.com/").removesuffix(".git")
@@ -297,6 +333,8 @@ def main(argv: list[str]) -> int:
                         help="print the release tag each selected target must carry")
     parser.add_argument("--for-tag", metavar="TAG",
                         help="print the release target a pushed bite_* tag belongs to")
+    parser.add_argument("--for-branch", metavar="BRANCH",
+                        help="emit key=value lines for the target a branch belongs to")
     parser.add_argument("--names", action="store_true")
     parser.add_argument("--env", metavar="NAME", help="emit key=value lines for $GITHUB_OUTPUT")
     parser.add_argument("--show")
@@ -321,18 +359,13 @@ def main(argv: list[str]) -> int:
         print(target_for_tag(targets, args.for_tag)["name"])
         return 0
 
+    if args.for_branch:
+        print("\n".join(emit_env(target_for_branch(targets, args.for_branch))))
+        return 0
+
     if args.env:
-        for target in targets:
-            if target["name"] == args.env:
-                print(f"target={target['name']}")
-                print(f"repository={repository_slug(target)}")
-                print(f"branch={target['branch']}")
-                print(f"lineage={target['lineage']}")
-                print(f"upstream={target.get('upstream', '')}")
-                print(f"amendment={target.get('amendment', 0)}")
-                print(f"version={version_for(target, None)}")
-                return 0
-        raise SystemExit(f"unknown target: {args.env}")
+        print("\n".join(emit_env(target_for_name(targets, args.env))))
+        return 0
 
     if args.show:
         for target in targets:

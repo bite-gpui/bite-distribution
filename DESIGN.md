@@ -509,7 +509,7 @@ is writing to cannot be extended. So:
 1.95.0, had never seen: six sites where `gpui::hsla` already returns the `Hsla`
 a field wants. Nothing about publishing requires chasing a moving compiler — it
 means fixing branches to satisfy rules that did not exist when they were written
-— so both workflows name the toolchain the branches were built and gated with,
+— so both build workflows name the toolchain the branches were built and gated with,
 and `rust-toolchain.toml` records it for local runs. Bumping it is a deliberate
 act, taken together with a run that fixes whatever the newer toolchain reports.
 
@@ -648,12 +648,12 @@ reservation of a name that must exist before anything may name it.
   Linux alone, and the labels are declared once, in `targets.py --matrix`, rather
   than in the workflow.
 
-`.github/actions/gate/action.yml` is the gate itself, shared by both workflows,
-so "the release workflow runs the same checks as a pull request" holds by
+`.github/actions/gate/action.yml` is the gate itself, shared by the workflows that
+build, so "the release workflow runs the same checks as a pull request" holds by
 construction rather than by review.
 
-Both workflows cache the cargo registry and git checkouts under a key built from
-the lockfile, with a shared restore prefix. The first runs spent most of their
+Those two workflows also cache the cargo registry and git checkouts under a key
+built from the lockfile, with a shared restore prefix. The first runs spent most of their
 time downloading dependencies, and while different targets have different
 lockfiles — so the *build* cache cannot be shared — the crates they download are
 almost the same.
@@ -663,6 +663,29 @@ checkout, with `isolated/target` as its own target directory. That is
 deliberately outside `target/` — the directory the build cache is keyed on — so a
 second closure's worth of artifacts is never cached, and the directory is
 disposable between runs.
+
+`.github/workflows/tag.yml` — the manual release step, and the convenient way in:
+dispatch it with a `bite_*` branch and it resolves the target, derives the tag,
+pushes it, and dispatches `release.yml`.
+
+It has to join the two halves explicitly, because a tag pushed with a
+repository's own `GITHUB_TOKEN` does not start another workflow run — that is
+GitHub's recursion rule, not a choice — so the publish has to be dispatched. A tag
+pushed *by hand*, by contrast, does start one through `release.yml`'s trigger,
+which is why that trigger stays: `tag.yml` is the self-documenting path, not the
+only one. The two cannot double-publish: the token-pushed tag does not cascade, a
+hand-pushed one does, and either way the runs are serialised by
+`registry-publish` and skip versions that already exist.
+
+`tag_release.py` carries the judgement, so it is testable without CI: it resolves
+the branch to its target, computes the version from the table, asks the *remote*
+what tags it has, and then either pushes, refuses, or reports. `--force` is for
+the release that was tagged and then failed — a rate limit, a tooling bug — where
+re-publishing the same version resumes rather than duplicates; it never moves a
+tag, because a tag naming a different commit would be a false statement about what
+was released, and the fix there is an `amendment` bump (§6). A report-only run
+exits zero whatever it finds — checking is an answer, not a failure — and an
+exit status that refuses belongs only to a run that was asked to push.
 
 `.github/workflows/release.yml` — two ways in.
 

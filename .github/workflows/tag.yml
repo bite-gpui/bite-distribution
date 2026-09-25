@@ -1,0 +1,124 @@
+# Tag a release branch, then publish it.
+#
+# The one manual step a release needs, and the convenient way in. It resolves a
+# `bite_*` branch to its target, derives the tag from the table (the tag *is* the
+# version), refuses a branch whose tip moved under an existing tag, pushes the
+# tag, and dispatches the publish workflow.
+#
+# It joins the two halves explicitly because a tag pushed with a repository's own
+# GITHUB_TOKEN does not start another workflow run — by design, to stop
+# recursion. A tag pushed by hand *does* start one, through release.yml's tag
+# trigger, so this workflow is the self-documenting path rather than the only one.
+# Publish concurrency plus publish.py's skip-what-exists make the overlap safe
+# either way.
+#
+# The secrets: SOURCE_WRITE_TOKEN needs `contents: write` on the source
+# repository, because this workflow pushes to a repository it does not live in.
+# A tag push cannot use GITHUB_TOKEN for that — it is scoped to this repository.
+# The registry token is not here: the publish it dispatches still runs behind the
+# `crates-io` environment, which is where an upload gets approved.
+name: Tag
+
+on:
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: 'release branch to tag and publish (e.g. bite_v1.21.0)'
+        required: true
+      force:
+        description: 'proceed when the tip is already tagged (re-publish a botched release)'
+        type: boolean
+        required: false
+        default: false
+      dry_run:
+        description: 'resolve and report only — do not push a tag or publish'
+        type: boolean
+        required: false
+        default: true
+
+# One tagging run at a time: two runs against one branch would race to create the
+# same tag, and the publish they both dispatch is already serialised by
+# release.yml's own `registry-publish` group.
+concurrency:
+  group: release-tag
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+
+permissions:
+  contents: read
+  actions: write   # dispatch the release workflow
+
+jobs:
+  tag:
+    name: tag and publish
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Validate the table and resolve the branch
+        id: resolve
+        env:
+          BRANCH: ${{ inputs.branch }}
+        run: |
+          set -euo pipefail
+          python3 targets.py --validate
+          python3 targets.py --for-branch "$BRANCH" >> "$GITHUB_OUTPUT"
+
+      # The branch itself, checked out with a token that can also push to it.
+      - uses: actions/checkout@v5
+        with:
+          repository: ${{ steps.resolve.outputs.repository }}
+          ref: ${{ steps.resolve.outputs.branch }}
+          path: src
+          token: ${{ secrets.SOURCE_WRITE_TOKEN }}
+
+      # All of the judgement is in the script, which is why it is testable
+      # locally: `--repo` names the checkout, `--remote` the repository to ask
+      # about existing tags, and omitting `--push` reports without touching
+      # anything.
+      - name: Resolve the tag, and push it unless this is a dry run
+        id: tag
+        env:
+          BRANCH: ${{ inputs.branch }}
+          FORCE: ${{ inputs.force }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          set -euo pipefail
+          args=(--branch "$BRANCH" --repo src)
+          if [ "$FORCE" = "true" ]; then args+=(--force); fi
+          if [ "$DRY_RUN" != "true" ]; then args+=(--push); fi
+          python3 tag_release.py "${args[@]}" >> "$GITHUB_OUTPUT"
+
+      - name: Summarise
+        if: always()
+        env:
+          TARGET: ${{ steps.tag.outputs.target }}
+          VERSION: ${{ steps.tag.outputs.version }}
+          TAG: ${{ steps.tag.outputs.tag }}
+          STATE: ${{ steps.tag.outputs.state }}
+          TIP: ${{ steps.tag.outputs.tip }}
+        run: |
+          {
+            echo "### ${TARGET:-unknown target}"
+            echo
+            echo "- version: \`${VERSION:-?}\`"
+            echo "- tag: ${TAG:-none (rolling target)}"
+            echo "- state: \`${STATE:-unknown}\`"
+            echo "- tip: \`${TIP:-?}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Trigger the publish
+        if: inputs.dry_run == false
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TARGET: ${{ steps.tag.outputs.target }}
+        run: |
+          set -euo pipefail
+          gh workflow run release.yml --ref main \
+            -f target="$TARGET" -f confirm="$TARGET" -f dry_run=false
+          echo "dispatched release.yml for $TARGET"
