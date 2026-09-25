@@ -61,19 +61,20 @@ versions, so the two scripts cannot disagree about what is being released.
 
 ## 8. Dependency Surgery
 
-Every external dependency in the closure was checked against crates.io. The
-closure needs git dependencies replaced by registry versions; one has no
-registry equivalent.
+Every external dependency in the closure was checked against crates.io. Git
+dependencies are replaced by registry versions where one exists; one has none.
 
-| dep in the source | source | registry substitute |
-| --- | --- | --- |
-| `zed-font-kit` | `zed-industries/font-kit` | `zed-font-kit 0.14.1-zed` ✅ |
-| `zed-scap` | `zed-industries/scap` | `zed-scap 0.0.8-zed` ✅ |
-| `zed-xim` | `zed-industries/xim-rs` | `zed-xim 0.4.0-zed` ✅ |
-| `async-tar` | `zed-industries/async-tar` | `async-tar 0.6.1` ✅ |
-| `wasm_thread` | `zed-industries/wasm_thread` | `wasm_thread 0.3.3` ✅ |
-| `proptest` | `proptest-rs/proptest` | `proptest 1.11.0` ✅ |
-| `wgsl-rs` | `schell/wgsl-rs` | ❌ only `0.0.0-reserved` exists |
+| Source Dependency | Source Git Repository | Registry Substitute | Status |
+| --- | --- | --- | --- |
+| `zed-font-kit` | `zed-industries/font-kit` | `zed-font-kit 0.14.1-zed` | ✅ substituted |
+| `zed-scap` | `zed-industries/scap` | `zed-scap 0.0.8-zed` | ✅ substituted |
+| `zed-xim` | `zed-industries/xim-rs` | `zed-xim 0.4.0-zed` | ✅ substituted |
+| `async-tar` | `zed-industries/async-tar` | `async-tar 0.6.1` | ✅ substituted |
+| `wasm_thread` | `zed-industries/wasm_thread` | `wasm_thread 0.3.3` | ✅ substituted |
+| `proptest` | `proptest-rs/proptest` | `proptest 1.11.0` | ✅ substituted |
+| `wgsl-rs` | `schell/wgsl-rs` | none — only `0.0.0-reserved` exists | ❌ blocked |
+
+### Transformation Mechanics & Constraints
 
 Staged against `bite_v1.21.0-pre`, that is nine rewrites: `proptest` and `scap`
 in the workspace table, `font-kit` in three manifests, `wasm_thread` in two,
@@ -101,6 +102,8 @@ verification builds the git source while consumers get the registry one.
 `async-tar` as registry `"0.6"`; 1.20.2, 1.21.0-pre and master all take it from a
 fork. A hard-coded substitution list would have been wrong for one group or the
 other; the closure scan finds this per target.
+
+### Transitive Withholding Mechanics (`wgsl-rs`)
 
 **`wgsl-rs` blocks four of ce's crates.** It is a non-optional dependency of
 `gpui_ce_render`, `gpui_ce_wgpu`, `gpui_ce_apple` and `gpui_ce_windows`, all of
@@ -144,6 +147,15 @@ in by `util_macros`. It is copied like any other crate and published as
 
 Measured across the 50-crate union: **44 Apache-2.0, 4 GPL-3.0-or-later, 2
 inherited from their workspace.**
+
+```
+    50 source packages
+    ├── 44 Apache-2.0
+    ├── 4 GPL-3.0-or-later (path, zlog, ztracing, ztracing_macro)
+    └── 2 inherited from the workspace
+```
+
+### Licensing Invariants & Staging Actions
 
 The GPL crates are `path`, `zlog`, `ztracing`, `ztracing_macro` — zed licenses
 these under GPL-3.0-or-later, and they are load-bearing: `gpui` depends on
