@@ -15,7 +15,9 @@ called by `ci.yml` for the targets a pull request stages. A dispatched run also
 leaves a receipt — `verified-<target>-<version>`, the stage report itself — which
 is what `release.yml` requires before it will publish ([§11](release.md)). It is
 one entry point over three actions, so there is one copy of the sequence rather
-than one per workflow, and a phase can also be run on its own:
+than one per workflow, and a phase can also be run on its own.
+
+### The Action Sequence
 
 | action | what it is | cost |
 | --- | --- | --- |
@@ -42,21 +44,7 @@ path under `$GITHUB_WORKSPACE`, so a check can run from any working directory; t
 `pipeline/` modules must stay together, because they import each other by bare
 name and add their own directory to `sys.path`.
 
-**Clippy is the compile.** `cargo clippy --all-targets --all-features -- -D
-warnings` type-checks the same targets a plain `cargo check` would and adds the
-lints on top, and because clippy runs under a compiler wrapper that
-re-fingerprints the workspace, a check step ahead of it recompiled every crate in
-the set for nothing. There is one step, and the lints are the reason it is
-worth having.
-
-**`--all-features` throughout.** The migration project checked the set with
-default features and with all of them, and only the latter compiles the code
-behind `bench-support` and `profiler`. With default features that code is
-reported dead, which is how verification first failed — on
-`gpui_authoring::Window::present_if_needed`, whose only callers are in
-`bench_context` and `profiler::hang`.
-
-In order:
+### The Checks, In Order
 
 1. `pipeline/targets.py --validate` and `pipeline/naming.py --verify` — the table
    is well formed, and every crate in the set has a name that no other crate needs
@@ -134,6 +122,22 @@ affordable on every push. Withheld crates ([§8](staging.md)) are still checked 
 they build, they just cannot be published — so verification covers 55 of the 57
 names in the union.
 
+### Core Technical Rules
+
+**Clippy is the compile.** `cargo clippy --all-targets --all-features -- -D
+warnings` type-checks the same targets a plain `cargo check` would and adds the
+lints on top, and because clippy runs under a compiler wrapper that
+re-fingerprints the workspace, a check step ahead of it recompiled every crate in
+the set for nothing. There is one step, and the lints are the reason it is
+worth having.
+
+**`--all-features` throughout.** The migration project checked the set with
+default features and with all of them, and only the latter compiles the code
+behind `bench-support` and `profiler`. With default features that code is
+reported dead, which is how verification first failed — on
+`gpui_authoring::Window::present_if_needed`, whose only callers are in
+`bench_context` and `profiler::hang`.
+
 **System packages are the union of two lists**, and the first run failed for
 want of the second. ce's publish job installs nine packages, which was enough to
 *package* crates but not to *link test binaries*: the run died at the linker with
@@ -169,6 +173,16 @@ means fixing branches to satisfy rules that did not exist when they were written
 — so both build workflows name the toolchain the branches were built and verified with,
 and `rust-toolchain.toml` records it for local runs. Bumping it is a deliberate
 act, taken together with a run that fixes whatever the newer toolchain reports.
+
+### Target Scope & Known Exclusions
+
+```
+57 names in the union
+  ├── 55 checked natively
+  │    ├── publishable — the full pipeline and the dry run
+  │    └── withheld (§8) — built and verified, publication blocked
+  └── 2 wasm-only — not checked at all
+```
 
 **The wasm-only crates are excluded from the native run and are not yet checked
 at all.** `gpui_web` includes its modules under
