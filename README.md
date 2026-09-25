@@ -166,13 +166,16 @@ The repo secrets are optional or required depending on which repository they rea
 - **`SOURCE_READ_TOKEN`** — only needed if the source repository is private. Every
   checkout that reads it falls back to the run's own `github.token`, so an unset
   read token is not an error.
-- **`SOURCE_WRITE_TOKEN`** with `contents: write` on the source repository —
-  required for `tag.yml`, and it has no fallback, because `github.token` is scoped
-  to *this* repository and cannot push a tag to another one. It must be a
-  **repository** secret, not an environment secret: the tag job names no
-  environment, so an environment secret is not visible to it. The workflow checks
-  for it up front and fails with that explanation, rather than letting
-  `actions/checkout` fail with `Input required and not supplied: token`.
+- **`SOURCE_WRITE_TOKEN`** with `contents: write` on the source repository — needed
+  only when a run actually has a tag to push, which `tag.yml` decides after
+  resolving the state: a dry run, a branch that is already tagged, and a rolling
+  target all need read access at most. When it *is* needed it has no fallback,
+  because `github.token` is scoped to *this* repository and cannot push a tag to
+  another one. It must be a **repository** secret, not an environment secret: the
+  tag job names no environment, so an environment secret is not visible to it. Both
+  the workflow and `tag_release.py` check and fail with that explanation rather
+  than letting `actions/checkout` fail with `Input required and not supplied:
+  token`.
 
 None of them is reachable from a pull request: no workflow here has a
 pull-request trigger. A local `cargo login` is only for hand runs from a prepared

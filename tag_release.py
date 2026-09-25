@@ -85,6 +85,30 @@ def commit_for(refs: dict[str, str], tag: str) -> str | None:
     return refs.get(f"refs/tags/{tag}")
 
 
+def push_tag(remote: str, tag: str, repo: Path) -> None:
+    """Push one tag ref, and explain a failure in the terms of this pipeline.
+
+    Reaching here means there really is a tag to push, so a failure is usually the
+    credential: the workflows name the source repository's token for exactly this,
+    and the run's own `GITHUB_TOKEN` cannot stand in because it is scoped to the
+    repository the workflow lives in. git's own message says which, but not what to
+    configure, so both are printed.
+    """
+    result = subprocess.run(
+        ["git", "push", remote, f"refs/tags/{tag}"], cwd=repo, capture_output=True, text=True
+    )
+    if result.returncode == 0:
+        return
+    detail = (result.stderr or result.stdout).strip()
+    raise SystemExit(
+        f"could not push {tag} to {remote}:\n{detail}\n"
+        "If that is a permission failure, the credential cannot write to the source "
+        "repository. The release workflows need SOURCE_WRITE_TOKEN with contents:write "
+        "on it, as a repository secret; the run's own token is scoped to the repository "
+        "the workflow lives in and cannot push a tag to another one."
+    )
+
+
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
@@ -169,7 +193,7 @@ def main(argv: list[str]) -> int:
         )
     if not local:
         run("git", "tag", "-a", tag, "-m", tag, cwd=repo)
-    run("git", "push", args.remote, f"refs/tags/{tag}", cwd=repo)
+    push_tag(args.remote, tag, repo)
     note(f"pushed {tag} at {tip[:10]}")
     return 0
 

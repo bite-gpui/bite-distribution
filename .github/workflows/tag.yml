@@ -16,10 +16,13 @@
 # would be watching the wrong repository and could never fire. This workflow exists
 # precisely so the tag ends up in the right place and the release still starts.
 #
-# The secrets: SOURCE_WRITE_TOKEN needs `contents: write` on the source
-# repository, because this workflow pushes to a repository it does not live in.
-# GITHUB_TOKEN cannot: it is scoped to this repository. The registry token is not
-# here — the publish it dispatches still runs behind the `crates-io` environment,
+# The secrets. SOURCE_WRITE_TOKEN needs `contents: write` on the source repository,
+# because this workflow pushes to a repository it does not live in, and
+# GITHUB_TOKEN cannot: it is scoped to this one. It is only required when there is
+# actually a tag to push, which is why the write check comes after the state is
+# resolved — a dry run, an already-tagged branch and a rolling target need read
+# access at most. The registry token is not here — the publish it dispatches still
+# runs behind the `crates-io` environment,
 # which is where an upload gets approved.
 name: Tag
 
@@ -87,13 +90,36 @@ jobs:
           python3 targets.py --validate
           python3 targets.py --for-branch "$BRANCH" >> "$GITHUB_OUTPUT"
 
-      # A missing secret must say so here rather than surfacing as `actions/checkout`
-      # failing with "Input required and not supplied: token", which names neither
-      # the secret nor the fix — an explicitly empty `token:` overrides the action's
-      # own default, so an unset secret is a hard error at the next step. This is
-      # also the one token with no fallback: `github.token` is scoped to this
-      # repository and cannot push a tag to another one.
-      - name: Require the token that writes to the source repository
+      # The branch itself. The token prefers the one that can also push, and falls
+      # back rather than being an empty `token:` — an explicitly empty value overrides
+      # actions/checkout's own default and fails with "Input required and not supplied:
+      # token", which names neither the secret nor the fix. Write access is only
+      # needed when there is a tag to push, and that is decided below.
+      - uses: actions/checkout@v5
+        with:
+          repository: ${{ steps.resolve.outputs.repository }}
+          ref: ${{ steps.resolve.outputs.branch }}
+          path: src
+          token: ${{ secrets.SOURCE_WRITE_TOKEN || secrets.SOURCE_READ_TOKEN || github.token }}
+
+      # All of the judgement is in the script, which is why it is testable locally:
+      # `--repo` names the checkout, `--remote` the repository to ask about existing
+      # tags, and omitting `--push` reports without touching anything.
+      #
+      # Run once to report and once to act, because the report is what says whether a
+      # tag has to be pushed at all — the only case that needs a credential able to
+      # write to the source repository. As a result a dry run, an already-tagged
+      # branch and a rolling target need no write access, which is the common case.
+      - name: Resolve the tag
+        id: tag
+        env:
+          BRANCH: ${{ inputs.branch }}
+        run: |
+          set -euo pipefail
+          python3 tag_release.py --branch "$BRANCH" --repo src >> "$GITHUB_OUTPUT"
+
+      - name: Require the write token, because this run has a tag to push
+        if: inputs.dry_run == false && steps.tag.outputs.state == 'untagged'
         env:
           TOKEN: ${{ secrets.SOURCE_WRITE_TOKEN }}
         run: |
@@ -101,36 +127,22 @@ jobs:
           if [ -n "$TOKEN" ]; then
             exit 0
           fi
-          echo "::error title=missing secret::SOURCE_WRITE_TOKEN is empty. Tagging needs a" \
-               "token with 'contents: write' on the source repository, stored as a repository" \
-               "secret on $GITHUB_REPOSITORY. This job names no environment, so an environment" \
-               "secret is not visible to it. A fine-grained token limited to that repository" \
-               "and its contents is enough."
+          echo "::error title=missing secret::${{ inputs.branch }} is untagged, so this run" \
+               "has a tag to push, and SOURCE_WRITE_TOKEN is empty. Pushing needs a token with" \
+               "'contents: write' on the source repository, stored as a repository secret on" \
+               "$GITHUB_REPOSITORY: this job names no environment, so an environment secret is" \
+               "not visible to it. A fine-grained token limited to that repository and its" \
+               "contents is enough. The run's own token cannot stand in — it is scoped here."
           exit 1
 
-      # The branch itself, checked out with the token that will also push the tag.
-      - uses: actions/checkout@v5
-        with:
-          repository: ${{ steps.resolve.outputs.repository }}
-          ref: ${{ steps.resolve.outputs.branch }}
-          path: src
-          # Non-empty, by the step above.
-          token: ${{ secrets.SOURCE_WRITE_TOKEN }}
-
-      # All of the judgement is in the script, which is why it is testable
-      # locally: `--repo` names the checkout, `--remote` the repository to ask
-      # about existing tags, and omitting `--push` reports without touching
-      # anything.
-      - name: Resolve the tag, and push it unless this is a dry run
-        id: tag
+      - name: Push the tag
+        if: inputs.dry_run == false
         env:
           BRANCH: ${{ inputs.branch }}
-          DRY_RUN: ${{ inputs.dry_run }}
         run: |
           set -euo pipefail
-          args=(--branch "$BRANCH" --repo src)
-          if [ "$DRY_RUN" != "true" ]; then args+=(--push); fi
-          python3 tag_release.py "${args[@]}" >> "$GITHUB_OUTPUT"
+          # stdout is the machine-readable report, which the step above already wrote.
+          python3 tag_release.py --branch "$BRANCH" --repo src --push > /dev/null
 
       - name: Summarise
         if: always()
