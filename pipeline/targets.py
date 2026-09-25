@@ -25,8 +25,12 @@ import sys
 import tomllib
 from pathlib import Path
 
-DIST = Path(__file__).resolve().parent
-TARGETS_FILE = DIST / "targets.toml"
+# The scripts live in `pipeline/`, the table and the workflows one level up at the
+# repository root, so the two anchors are named for what they are rather than for
+# where this file happens to sit.
+HERE = Path(__file__).resolve().parent
+ROOT = HERE.parent
+TARGETS_FILE = ROOT / "targets.toml"
 
 REQUIRED = ("name", "url", "repo", "branch", "lineage", "roots")
 LINEAGES = ("zed", "ce")
@@ -45,7 +49,7 @@ DEFAULT = ("bite_v1.20.2", "bite_ce_main")
 # target nobody can select, so `--validate` compares them. The values are the
 # table's branches (which branch in the source repository to release) and names
 # (which target to dispatch).
-WORKFLOWS = DIST / ".github" / "workflows"
+WORKFLOWS = ROOT / ".github" / "workflows"
 SELECTORS = {
     "tag.yml": ("branch", "branch"),
     "release.yml": ("target", "name"),

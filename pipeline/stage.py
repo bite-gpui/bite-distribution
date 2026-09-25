@@ -42,8 +42,8 @@ import sys
 import tomllib
 from pathlib import Path
 
-DIST = Path(__file__).resolve().parent
-sys.path.insert(0, str(DIST))
+HERE = Path(__file__).resolve().parent
+sys.path.insert(0, str(HERE))
 import inventory  # noqa: E402
 import naming  # noqa: E402
 import targets as targets_mod  # noqa: E402

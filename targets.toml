@@ -1,7 +1,7 @@
 # Distribution targets.
 #
 # One entry per branch whose crates get published. `lineage` selects the
-# published-name family (see naming.py) and `version_from` the version scheme
+# published-name family (see pipeline/naming.py) and `version_from` the version scheme
 # (see DESIGN.md §6). `roots` are the source packages the closure is walked
 # from; everything else is discovered from the manifests.
 #

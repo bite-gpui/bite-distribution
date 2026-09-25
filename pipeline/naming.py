@@ -29,8 +29,11 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import inventory  # noqa: E402
 
-DIST = Path(__file__).resolve().parent
-TARGETS_FILE = DIST / "targets.toml"
+# The modules that import each other live together here; the table is at the
+# repository root, one level up.
+HERE = Path(__file__).resolve().parent
+ROOT = HERE.parent
+TARGETS_FILE = ROOT / "targets.toml"
 
 # The facade of each lineage. Both keep the `gpui` lib name, so the package
 # name is the only thing distinguishing them.

@@ -53,14 +53,14 @@ jobs:
           python-version: '3.13'
 
       - name: Validate the target table
-        run: python3 targets.py --validate
+        run: python3 pipeline/targets.py --validate
 
       - name: Resolve the reference branches
         id: refs
         # One branch per lineage, which is enough to exercise the naming rule; a
         # crate that arrives on another branch is caught when that branch is
-        # staged, because stage.py fails on a crate it has no name for.
-        run: python3 targets.py --refs --select default >> "$GITHUB_OUTPUT"
+        # staged, because pipeline/stage.py fails on a crate it has no name for.
+        run: python3 pipeline/targets.py --refs --select default >> "$GITHUB_OUTPUT"
 
       - name: Check out the source branch
         uses: actions/checkout@v5
@@ -79,7 +79,7 @@ jobs:
 
       - name: Verify published names
         run: |
-          python3 naming.py --verify \
+          python3 pipeline/naming.py --verify \
             --lineage-repo zed=.src/zed \
             --lineage-repo ce=.src/ce
 
@@ -95,7 +95,7 @@ jobs:
           python-version: '3.13'
       - id: matrix
         run: |
-          matrix="$(python3 targets.py --matrix --select '${{ inputs.targets || 'default' }}' --platforms '${{ inputs.platforms || 'ubuntu-latest' }}')"
+          matrix="$(python3 pipeline/targets.py --matrix --select '${{ inputs.targets || 'default' }}' --platforms '${{ inputs.platforms || 'ubuntu-latest' }}')"
           echo "$matrix"
           echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
 
@@ -117,7 +117,7 @@ jobs:
           path: src
           token: ${{ secrets.SOURCE_READ_TOKEN || github.token }}
 
-      # stage.py reads the manifests with tomllib, which is 3.11 and later; the
+      # pipeline/stage.py reads the manifests with tomllib, which is 3.11 and later; the
       # runner's own python3 is too old for that on macOS.
       - uses: actions/setup-python@v5
         with:
@@ -157,7 +157,7 @@ jobs:
           key: ${{ matrix.target }}-${{ matrix.os }}
 
       - name: Stage
-        run: python3 stage.py --target '${{ matrix.target }}' --source src
+        run: python3 pipeline/stage.py --target '${{ matrix.target }}' --source src
 
       - uses: ./.github/actions/gate
         with:

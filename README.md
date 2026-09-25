@@ -23,25 +23,49 @@ bite-gpui-ce = "0.20260922.0"   # the community-edition transplant
 This directory is ignored by the zed clone, the same way `.tools/` is; it is not
 part of any published crate.
 
+## Layout
+
+```
+pipeline/        the release pipeline, run in order
+  targets.py       validate the table, select targets, feed CI
+  inventory.py     a checkout's in-path closure, and the publish order
+  naming.py        source package → published crate name, verified per target
+  stage.py         carve a target into a publishable state
+  publish.py       publish a staged target, in dependency order
+  tag_release.py   resolve a branch to the tag it must carry, push it
+checks/          the gates a staged tree must pass
+  check_reads.py       packaged file sets, and paths that escape the crate
+  apple_build_check.py the Apple crate's cbindgen header is generated
+  test_isolated.py     each tarball compiles with no siblings, as crates.io sees it
+.github/         ci.yml, tag.yml, release.yml, actions/gate/
+targets.toml     the twelve target branches, the table the pipeline reads
+DESIGN.md  README.md  rust-toolchain.toml
+```
+
+The scripts in `pipeline/` import each other by bare name and add their own
+directory to `sys.path`, so they have to stay together. The `checks/` scripts take
+the stage as an argument and read nothing relative to themselves, so they run from
+the stage like `python3 "$GITHUB_WORKSPACE/checks/check_reads.py" --stage .`.
+
 ## Pipeline
 
 ```
 targets.toml
     │
-    ├─ targets.py ──► validate the table, build the CI matrix
-    ├─ naming.py  ──► source package → published crate name, verified per target
+    ├─ pipeline/targets.py ──► validate the table, build the CI matrix
+    ├─ pipeline/naming.py  ──► source package → published crate name, verified per target
     │
-    ├─ stage.py ───► mutate a throwaway checkout of the branch in place:
-    │                 rename packages, pin lib names, set versions,
-    │                 raise publish, rewrite workspace deps,
-    │                 substitute git deps, licence + provenance
-    │                 └─► dist-stage.json   (the handoff)
+    ├─ pipeline/stage.py ───► mutate a throwaway checkout of the branch in place:
+    │                          rename packages, pin lib names, set versions,
+    │                          raise publish, rewrite workspace deps,
+    │                          substitute git deps, licence + provenance
+    │                          └─► dist-stage.json   (the handoff)
     │
-    └─ publish.py ─► dependency-ordered publish from the report,
-                     resumable, with local-graph dry runs
+    └─ pipeline/publish.py ─► dependency-ordered publish from the report,
+                              resumable, with local-graph dry runs
 ```
 
-The report is what ties the last two together: `publish.py` takes the order,
+The report is what ties the last two together: `pipeline/publish.py` takes the order,
 names and versions from it, so the two scripts cannot disagree about what is
 being released.
 
@@ -50,39 +74,49 @@ being released.
 | file | what it does |
 | --- | --- |
 | `targets.toml` | the twelve target branches, their lineage, version scheme and URLs |
-| `inventory.py` | resolves a checkout's in-path dependency closure, and the publish order |
-| `naming.py` | source package → published crate name; `--verify` checks it per target |
-| `targets.py` | validates and selects targets; `--tags` says what to tag, `--for-tag` and `--for-branch` resolve the other way, `--matrix` and `--env` feed CI |
-| `stage.py` | carves a target into a publishable state |
-| `tag_release.py` | resolves a branch to the tag it must carry, refuses to move one, pushes it |
-| `publish.py` | publishes a staged target in dependency order |
+| `pipeline/inventory.py` | resolves a checkout's in-path dependency closure, and the publish order |
+| `pipeline/naming.py` | source package → published crate name; `--verify` checks it per target |
+| `pipeline/targets.py` | validates and selects targets; `--tags` says what to tag, `--for-tag` and `--for-branch` resolve the other way, `--matrix` and `--env` feed CI |
+| `pipeline/stage.py` | carves a target into a publishable state |
+| `pipeline/tag_release.py` | resolves a branch to the tag it must carry, refuses to move one, pushes it |
+| `pipeline/publish.py` | publishes a staged target in dependency order |
+| `checks/check_reads.py` | every file a package names is packaged, and none escapes the crate |
+| `checks/apple_build_check.py` | the Apple crate's cbindgen shader header is generated |
+| `checks/test_isolated.py` | each tarball compiles alone, the way crates.io ships it |
 
-`inventory.py` is the load-bearing one and is useful on its own — the closures
+`pipeline/inventory.py` is the load-bearing one and is useful on its own — the closures
 it reports are measured, not assumed, which is how the project knows the zed
 release line is 31 crates, ce is 26, and which seven git dependencies the
 closure needs replaced.
 
 ```sh
-# what would be published for this branch?
-python3 inventory.py --repo . --root gpui --root gpui_parley --summary
+# Run from the zed clone root, where `.dist/` is; the commands that read a
+# *checkout of a branch* say so, because that is a different tree.
+
+# what would be published for this branch? (from a checkout of it)
+python3 .dist/pipeline/inventory.py --repo . --root gpui --root gpui_parley --summary
 
 # what tag does a branch need, and does it exist yet?
-python3 tag_release.py --branch bite_v1.21.0 --repo <a checkout of it>
+python3 .dist/pipeline/tag_release.py --branch bite_v1.21.0 --repo <a checkout of it>
 
 # every target, and the tag its branch must carry
-python3 targets.py --tags --select all
+python3 .dist/pipeline/targets.py --tags --select all
 
 # every target's closure, with names and collisions checked
-python3 naming.py --verify --lineage-repo zed=. --lineage-repo ce=.tools/worktrees/wt-ce
+python3 .dist/pipeline/naming.py --verify --lineage-repo zed=. --lineage-repo ce=.tools/worktrees/wt-ce
 
 # the whole union of published names
-python3 naming.py --table
+python3 .dist/pipeline/naming.py --table
 
-# stage a branch and see what it produced
-python3 stage.py --target bite_v1.20.2 --source src
-python3 publish.py --stage src --list
-python3 publish.py --stage src --dry-run
+# stage a branch and see what it produced (from the directory holding the checkout)
+python3 .dist/pipeline/stage.py --target bite_v1.20.2 --source src
+python3 .dist/pipeline/publish.py --stage src --list
+python3 .dist/pipeline/publish.py --stage src --dry-run
 ```
+
+`naming.py` and `stage.py` take their checkout as a path, so they resolve it
+against the current directory — the `--lineage-repo` paths above are relative to
+the zed clone, which is why these run from its root rather than from `.dist/`.
 
 ## Releasing
 
@@ -96,13 +130,13 @@ gh workflow run tag.yml -f branch=bite_v1.21.0 -f dry_run=false    # tag if need
 
 `branch` and `target` are `choice` lists of the **source repository's** branches —
 `bite-gpui/bite-gpui` — not free text, so a typo cannot start a run against a
-branch that does not exist, and `targets.py --validate` fails if either list and
+branch that does not exist, and `pipeline/targets.py --validate` fails if either list and
 `targets.toml` ever disagree. (The dispatch dialog's *other* dropdown, "Use
 workflow from", selects this repository, because that is where the workflow file
 lives; it is not the branch being released.)
 
 `tag.yml` resolves the branch to its target, derives the tag from the table
-(`tag_release.py`), pushes the tag when there is one to push, and dispatches the
+(`pipeline/tag_release.py`), pushes the tag when there is one to push, and dispatches the
 publish. `dry_run` defaults to true and only reports — a report is an answer, not a
 failure, so it exits zero and puts the verdict in its summary (`untagged`,
 `already-tagged`, `conflict`, `rolling`).
@@ -139,7 +173,7 @@ If you want release-on-tag — pushing `bite_1.21.0` to the source repository an
 having it publish — the trigger has to live *there*, since that is where the tags
 are. A ten-line workflow in `bite-gpui/bite-gpui` that runs
 `gh workflow run release.yml --repo bite-gpui/distribution -f target=...` is the
-whole of it; `targets.py --for-tag` is the lookup it would need.
+whole of it; `pipeline/targets.py --for-tag` is the lookup it would need.
 
 ## CI
 
@@ -147,8 +181,10 @@ whole of it; `targets.py --for-tag` is the lookup it would need.
   naming rule, then stage one target per lineage through the gate. Dispatch with
   `all` for every branch.
 - `.github/actions/gate/action.yml` — the gate, shared by the release workflows:
-  system deps, resolve, check, clippy `-D warnings`, test, package file sets,
-  publish dry run.
+  system deps, resolve, check, clippy `-D warnings`, test, package file sets
+  (`checks/check_reads.py`), the Apple check (`checks/apple_build_check.py`) where
+  the lineage has one, publish dry run, and the isolated build
+  (`checks/test_isolated.py`).
 - `.github/workflows/tag.yml` — the manual release step. Dispatch it with a branch
   from the source repository; it resolves the tag, refuses to move one, pushes it,
   and dispatches `release.yml`.
@@ -173,7 +209,7 @@ The repo secrets are optional or required depending on which repository they rea
   because `github.token` is scoped to *this* repository and cannot push a tag to
   another one. It must be a **repository** secret, not an environment secret: the
   tag job names no environment, so an environment secret is not visible to it. Both
-  the workflow and `tag_release.py` check and fail with that explanation rather
+  the workflow and `pipeline/tag_release.py` check and fail with that explanation rather
   than letting `actions/checkout` fail with `Input required and not supplied:
   token`.
 
@@ -193,7 +229,7 @@ Also verified: `cargo metadata` resolves the whole staged workspace for both
 lineages — 775 packages for ce, including the crates outside its closure that
 depend on renamed ones; every staged package keeps its original lib name
 (`bite-gpui` exports `gpui`, `bite-gp-platform` exports `gpui_platform`,
-`bite-gp-util` exports `util`); `publish.py --dry-run` packages and compiles a
+`bite-gp-util` exports `util`); `pipeline/publish.py --dry-run` packages and compiles a
 leaf crate in isolation; the version scheme's edges (amendment bounds,
 prereleases, patch overflow); and that an untagged branch is refused with the
 exact command to fix it.
@@ -223,7 +259,7 @@ closure build needs tens of GB — CI runs them) and the wasm32 check for
 
 Every crate of `bite_v1.20.2` is on crates.io at `1.20.203` — the zed lineage's
 31 names. The first release was published by hand from a prepared stage tree,
-which is why `publish.py` writes the `.cargo/config.toml` a plain
+which is why `pipeline/publish.py` writes the `.cargo/config.toml` a plain
 `cargo publish` needs; it was rate-limited partway and resumed with
 `--only <crate>`, which is the behaviour that makes a multi-crate release
 survivable. Releases from here go through the workflow instead.

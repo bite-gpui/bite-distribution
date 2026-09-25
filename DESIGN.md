@@ -56,7 +56,7 @@ alternative we rejected and why.
 ## 3. Inputs and provenance
 
 Ten targets, one per branch. `.dist/targets.toml` is the source of truth and
-`.dist/naming.py --verify` checks it against the manifests.
+`.dist/pipeline/naming.py --verify` checks it against the manifests.
 
 | target | lineage | publishes as | upstream | tag | publishes |
 | --- | --- | --- | --- | --- | --- |
@@ -73,7 +73,7 @@ Ten targets, one per branch. `.dist/targets.toml` is the source of truth and
 
 `upstream` is the zed release a branch retargets, recorded for provenance; the
 released version is derived from it and declared by the branch's tag (§6).
-`targets.py --tags` prints the tag each selected target must carry.
+`pipeline/targets.py --tags` prints the tag each selected target must carry.
 
 All twelve live in one repository, `git@github.com:bite-gpui/bite-gpui.git`. They share
 a common ancestor — ce is a fork of zed, not a separate lineage — but they have
@@ -102,7 +102,7 @@ original = "gpui"
 
 The closure is computed from the manifests, not from a list. `crates/gpui` (and
 `crates/gpui_parley`, which nothing depends on but which consumers want to
-select directly) are the roots; from there `.dist/inventory.py` walks in-checkout
+select directly) are the roots; from there `.dist/pipeline/inventory.py` walks in-checkout
 path dependencies.
 
 Two things make this less trivial than it sounds, and both are handled:
@@ -179,7 +179,7 @@ Each upstream patch release gets **a hundred slots**. `1.20.2` publishes as
 `1.20.200`; amendments to the same retarget take 201..299; `1.20.3` starts at
 300. The gap is the point — an amendment can never collide with the next
 release, versions still sort in upstream order, and no retarget will need
-anything close to a hundred amendments. `targets.py` refuses a table that does
+anything close to a hundred amendments. `pipeline/targets.py` refuses a table that does
 not fit the scheme (an upstream patch of 100 or more, an amendment outside
 0..99).
 
@@ -214,7 +214,7 @@ Three consequences, all deliberate:
   release that is already published, bump `amendment`, push the commit, tag it.
 - **The branch name is checked against the table without any git at all.**
   `bite_v1.20.2` must declare `1.20.2`; `bite_v1.14.x` may leave the patch open
-  but must agree on `1.14`. `targets.py --validate` runs this, so a typo is
+  but must agree on `1.14`. `pipeline/targets.py --validate` runs this, so a typo is
   caught in the `table` job in seconds.
 - **Fixing the source costs a version bump on a release branch.** A new commit
   moves the tip, the tag no longer points at it, and staging refuses until the
@@ -245,7 +245,7 @@ and does not.
 
 ## 7. Staging algorithm
 
-`stage.py --target <name> --source <checkout>` rewrites a throwaway checkout of
+`pipeline/stage.py --target <name> --source <checkout>` rewrites a throwaway checkout of
 the target branch **in place**, and writes a `dist-stage.json` report beside it.
 It does not copy the closure into a synthetic workspace.
 
@@ -260,7 +260,7 @@ it keeps cargo itself as the source of truth.
 
 1. **Materialize** a checkout of the branch tip (CI checks the branch out
    directly; locally, `git worktree add --detach .dist/wt/<target> <branch>`).
-2. **Measure** the closure with `inventory.py`, and resolve the version from the
+2. **Measure** the closure with `pipeline/inventory.py`, and resolve the version from the
    release tag at the branch tip (§6).
 3. **Rename** each closure crate's `[package] name` — and **pin `[lib] name`**.
    These crates declare `[lib] path` without a name, so their lib name is
@@ -292,7 +292,7 @@ it keeps cargo itself as the source of truth.
    the `gpui_ce_elements` failure before the resolver did. A crate with no name
    in the naming rule is fatal; a withheld crate (§8) is reported, not fatal.
 
-The report is the handoff: `publish.py` reads it for the order, names and
+The report is the handoff: `pipeline/publish.py` reads it for the order, names and
 versions, so the two scripts cannot disagree about what is being released.
 
 ## 8. Dependency surgery
@@ -347,7 +347,7 @@ What the pipeline does about it is deliberately not "fail":
   git dependency resolves locally, so the affected crates are named in the
   report (`blocked`) and removed from the publish order. Staging succeeds, so CI
   can check the other seventeen ce crates instead of stopping at a known
-  blocker. `stage.py --strict` restores the hard failure for anyone who wants it.
+  blocker. `pipeline/stage.py --strict` restores the hard failure for anyone who wants it.
 - **withholding is transitive.** A crate that depends on a withheld crate is
   withheld too, because cargo will not package it either: `cargo package`
   normalises the dependency into a version requirement and then has to resolve
@@ -359,7 +359,7 @@ What the pipeline does about it is deliberately not "fail":
   Only real dependencies count; a withheld *dev*-dependency does not stop a crate
   being published, which is what `no_verify` is for.
 - **the dry run skips what is withheld**, and prints why.
-- **a release refuses.** `publish.py` will not publish a target with withheld
+- **a release refuses.** `pipeline/publish.py` will not publish a target with withheld
   crates unless `--allow-partial` is passed deliberately: a release is all of its
   crates or none of them, and a partial one published by accident cannot be
   withdrawn.
@@ -406,24 +406,29 @@ field) but nothing fails on them.
 ## 10. Gates
 
 Run by `.github/actions/gate/action.yml` against the staged checkout, per
-target, before anything is published. All of them use `--all-features`: the
+target, before anything is published. The scripts live in two directories: the
+pipeline that produces the stage in `pipeline/`, and the checks that judge it in
+`checks/`. The gate invokes them by path under `$GITHUB_WORKSPACE`, so a check can
+run from any working directory; the `pipeline/` modules must stay together,
+because they import each other by bare name and add their own directory to
+`sys.path`. All of them use `--all-features`: the
 migration project gated the closure with default features and with all of them,
 and only the latter compiles the code behind `bench-support` and `profiler`.
 With default features that code is reported dead, which is how the gate first
 failed — on `gpui_authoring::Window::present_if_needed`, whose only callers are
 in `bench_context` and `profiler::hang`.
 
-1. `targets.py --validate` and `naming.py --verify` — the table is well formed,
+1. `pipeline/targets.py --validate` and `pipeline/naming.py --verify` — the table is well formed,
    and every closure crate has a name that no other crate needs (§12).
 2. `cargo metadata --format-version 1` — the whole workspace resolves. Cheap,
    and it is what caught the stale-version rename in §7 step 4.
 3. `cargo check -p <native closure> --all-targets --all-features` — zero warnings.
 4. `cargo clippy -p <native closure> --all-targets --all-features -- -D warnings`.
 5. `cargo test -p <native closure> --all-features`.
-6. `check_reads.py` — for every publishable crate, `cargo package --list` gives
+6. `checks/check_reads.py` — for every publishable crate, `cargo package --list` gives
    the file set that would be uploaded, and every path the crate names at build
    time has to be inside it. See below.
-7. `apple_build_check.py` — the Apple crate's build script feeds cbindgen five
+7. `checks/apple_build_check.py` — the Apple crate's build script feeds cbindgen five
    shader sources and sits behind `cfg(target_os = "macos")`, which cargo
    evaluates against the *host*: no runner this project has ever ran it. This
    strips that gate and the two shader-compilation calls (both asserted, so a
@@ -442,13 +447,13 @@ in `bench_context` and `profiler::hang`.
    never had the step, so the gate runs this on a lineage with nothing in it. The
    skip is narrow — an Apple build script that still calls cbindgen and is not
    recognised still fails, because passing there would lose this check's cover.
-8. `publish.py --dry-run` — packages each crate and compiles it as the root of a
+8. `pipeline/publish.py --dry-run` — packages each crate and compiles it as the root of a
    build, which is the only check that the published artifact builds. Resolving a
    root's *dev*-dependencies is part of that, so a crate whose dev-dependencies
    cannot resolve is published with `--no-verify` and its compilation is skipped.
    `--allow-dirty` is required throughout because staging rewrites the tree in
    place.
-9. `test_isolated.py` — packages and unpacks every publishable archive, then
+9. `checks/test_isolated.py` — packages and unpacks every publishable archive, then
    compiles a generated crate that depends on all of them. That is what closes
    the `no_verify` gap above: a consumer resolves a dependency's normal
    dependencies and never its dev-dependencies. It is also the only check that
@@ -539,7 +544,7 @@ A target that fails any gate is not publishable. Gate failure is per target, so
 
 ## 11. Publish order and rate limits
 
-`publish.py --stage <dir>` reads the stage report, publishes in dependency
+`pipeline/publish.py --stage <dir>` reads the stage report, publishes in dependency
 order, and handles the three things a bare loop gets wrong. `--commands` prints
 that same sequence as plain `cargo publish` lines, for running the first release
 by hand, derived from the same report so it cannot drift.
@@ -563,7 +568,7 @@ version = "1.20.203"`, `package = "bite-gpui"` — and cargo refuses to package 
 path dependency for publication anyway. The same entries are written to
 `.cargo/config.toml` in the staged tree, which is what lets a hand-run
 `cargo publish` command work; that file sits outside every crate directory, so it
-is not packaged either, and `publish.py --commands` writes it alongside the
+is not packaged either, and `pipeline/publish.py --commands` writes it alongside the
 commands it prints.
 
 **Resuming.** A version already on crates.io is skipped, so an interrupted run
@@ -625,7 +630,7 @@ crates are published with `--no-verify`, because verification resolves the root
 package's dev-dependencies for every target and a first release has not uploaded
 the crate those dev-dependencies point at yet — either the facade, which is
 published last, or a zed-internal crate that is never published at all. The set
-is derived from the manifests by `stage.py` (reported as `no_verify`) rather than
+is derived from the manifests by `pipeline/stage.py` (reported as `no_verify`) rather than
 hand-kept, and the workspace-wide `cargo check` in the gate covers the
 compilation that skips. And the order comes from the manifests rather than a
 hand-kept list, because the two lineages and ten release targets have
@@ -647,7 +652,7 @@ reservation of a name that must exist before anything may name it.
 - **table** validates `targets.toml`, then runs the naming rule against a real
   closure per lineage, so a new crate that would land on a taken name fails long
   before a release rather than during one;
-- **plan** turns the selector into a matrix via `targets.py`;
+- **plan** turns the selector into a matrix via `pipeline/targets.py`;
 - **stage** (matrix) checks the target branch out, stages it, and runs the gate.
   A pull request stages one target per lineage (`default`); dispatch with `all`
   when a change could affect every branch. Ten cold builds of gpui on every push
@@ -655,7 +660,7 @@ reservation of a name that must exist before anything may name it.
   leg, so `platforms` can add a `macos-14` leg to every selected target — the
   only way the Apple backends' build script is ever compiled, since it is behind
   `cfg(target_os = "macos")` and a Linux runner never sees it. It defaults to
-  Linux alone, and the labels are declared once, in `targets.py --matrix`, rather
+  Linux alone, and the labels are declared once, in `pipeline/targets.py --matrix`, rather
   than in the workflow.
 
 `.github/actions/gate/action.yml` is the gate itself, shared by the workflows that
@@ -679,7 +684,7 @@ the source repository and it resolves the target, derives the tag, pushes it, an
 dispatches `release.yml`.
 
 Both of those workflows' dispatch inputs are `choice` lists of the source
-repository's branches, not free text, and `targets.py --validate` compares them
+repository's branches, not free text, and `pipeline/targets.py --validate` compares them
 against the table: GitHub fills a dispatch dropdown from the workflow file and from
 nothing that can read `targets.toml`, so the list is the one part of the table that
 has to be written twice, and a target added to one and not the other would be a
@@ -696,14 +701,14 @@ right place and the release starts anyway; release-on-tag would mean putting the
 trigger in the source repository, where the tags are, dispatching this workflow,
 and `--for-tag` is the lookup it would need.
 
-`tag_release.py` carries the judgement, so it is testable without CI: it resolves
+`pipeline/tag_release.py` carries the judgement, so it is testable without CI: it resolves
 the branch to its target, computes the version from the table, asks the *remote*
 what tags it has, and then either pushes or reports. Exactly one state is refused,
 and it is the one not to override: a tag that names a *different* commit, because
 the content under a published version is not allowed to change and the answer is an
 `amendment` bump (§6) that mints a new version rather than a moved tag. A tip that
 already carries its own tag is **not** refused — that is a release that did not
-finish, and finishing it means publishing, which `publish.py` makes idempotent by
+finish, and finishing it means publishing, which `pipeline/publish.py` makes idempotent by
 skipping what already landed. A report-only run exits zero whatever it finds —
 checking is an answer, not a failure — and an exit status that refuses belongs only
 to a run that was asked to push.

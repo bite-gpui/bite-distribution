@@ -22,7 +22,7 @@ on:
   workflow_dispatch:
     inputs:
       # A `choice` list, not free text: it is the branches of the source repository,
-      # and `targets.py --validate` fails if it and the table ever disagree.
+      # and `pipeline/targets.py --validate` fails if it and the table ever disagree.
       target:
         description: 'target to release (a branch of bite-gpui/bite-gpui)'
         type: choice
@@ -83,7 +83,7 @@ jobs:
           python-version: '3.13'
 
       - name: Validate the table
-        run: python3 targets.py --validate
+        run: python3 pipeline/targets.py --validate
 
       - name: Resolve the target
         id: resolve
@@ -93,7 +93,7 @@ jobs:
           set -euo pipefail
           # Emits target=, repository=, branch=, lineage=, upstream=,
           # amendment= and version= for $GITHUB_OUTPUT.
-          python3 targets.py --env "$INPUT_TARGET" >> "$GITHUB_OUTPUT"
+          python3 pipeline/targets.py --env "$INPUT_TARGET" >> "$GITHUB_OUTPUT"
 
       - name: Refuse an unconfirmed publish
         if: inputs.dry_run == false && inputs.confirm != inputs.target
@@ -162,7 +162,7 @@ jobs:
       - name: Stage
         env:
           TARGET: ${{ needs.prepare.outputs.target }}
-        run: python3 stage.py --target "$TARGET" --source src
+        run: python3 pipeline/stage.py --target "$TARGET" --source src
 
       - name: Record the version being released
         id: version
@@ -220,7 +220,7 @@ jobs:
       - name: Stage
         env:
           TARGET: ${{ needs.prepare.outputs.target }}
-        run: python3 stage.py --target "$TARGET" --source src
+        run: python3 pipeline/stage.py --target "$TARGET" --source src
 
       # Deliberately not the gate action: the gate already ran on this commit,
       # and re-running tests here would hold the registry lock for the length of
@@ -236,7 +236,7 @@ jobs:
           TARGET: ${{ needs.prepare.outputs.target }}
         run: |
           set -o pipefail
-          python3 publish.py --stage src 2>&1 | tee publish.log
+          python3 pipeline/publish.py --stage src 2>&1 | tee publish.log
 
       # A rate-limited first release is interrupted more often than it fails, so
       # the log is the thing to read: it names the crate that stopped the run and

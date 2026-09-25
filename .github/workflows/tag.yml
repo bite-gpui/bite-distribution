@@ -30,7 +30,7 @@ on:
   workflow_dispatch:
     inputs:
       # A `choice` list, not free text: these are the branches of the source
-      # repository, `bite-gpui/bite-gpui`, and `targets.py --validate` fails if the
+      # repository, `bite-gpui/bite-gpui`, and `pipeline/targets.py --validate` fails if the
       # list and the table ever disagree. Newest line first, so the default is the
       # one most likely meant — and `dry_run` defaults to true, so a wrong pick
       # still does not push anything.
@@ -87,8 +87,8 @@ jobs:
           BRANCH: ${{ inputs.branch }}
         run: |
           set -euo pipefail
-          python3 targets.py --validate
-          python3 targets.py --for-branch "$BRANCH" >> "$GITHUB_OUTPUT"
+          python3 pipeline/targets.py --validate
+          python3 pipeline/targets.py --for-branch "$BRANCH" >> "$GITHUB_OUTPUT"
 
       # The branch itself. The token prefers the one that can also push, and falls
       # back rather than being an empty `token:` — an explicitly empty value overrides
@@ -116,7 +116,7 @@ jobs:
           BRANCH: ${{ inputs.branch }}
         run: |
           set -euo pipefail
-          python3 tag_release.py --branch "$BRANCH" --repo src >> "$GITHUB_OUTPUT"
+          python3 pipeline/tag_release.py --branch "$BRANCH" --repo src >> "$GITHUB_OUTPUT"
 
       - name: Require the write token, because this run has a tag to push
         if: inputs.dry_run == false && steps.tag.outputs.state == 'untagged'
@@ -142,7 +142,7 @@ jobs:
         run: |
           set -euo pipefail
           # stdout is the machine-readable report, which the step above already wrote.
-          python3 tag_release.py --branch "$BRANCH" --repo src --push > /dev/null
+          python3 pipeline/tag_release.py --branch "$BRANCH" --repo src --push > /dev/null
 
       - name: Summarise
         if: always()

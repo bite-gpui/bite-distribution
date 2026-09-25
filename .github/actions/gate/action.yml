@@ -15,7 +15,7 @@ description: Resolve, check, lint, test, package-check, dry-run and unpack-and-b
 
 inputs:
   stage:
-    description: path to the staged checkout (the tree stage.py mutated in place)
+    description: path to the staged checkout (the tree pipeline/stage.py mutated in place)
     required: true
   test:
     description: run the closure's tests
@@ -118,7 +118,7 @@ runs:
         args=(); for package in "${packages[@]}"; do args+=(-p "$package"); done
         cargo test "${args[@]}" --all-features --lib --tests
 
-    # `--list` is the cheap half of packaging. `check_reads.py` turns it into a
+    # `--list` is the cheap half of packaging. `checks/check_reads.py` turns it into a
     # check: every path a crate names at build time has to be inside the crate and
     # in the archive. That is the only place the `gpui_apple` defect was visible —
     # its build script read shader types from a sibling crate, which the workspace
@@ -127,19 +127,19 @@ runs:
     - name: Package file sets
       shell: bash
       working-directory: ${{ inputs.stage }}
-      run: python3 "$GITHUB_WORKSPACE/check_reads.py" --stage .
+      run: python3 "$GITHUB_WORKSPACE/checks/check_reads.py" --stage .
 
     # Cargo compiles build scripts for the *host*, so `cfg(target_os = "macos")`
     # keeps the Apple crate's cbindgen step from running on any runner this
     # project has — which is how a `build.rs` reading five shader types from
-    # sibling crates reached the registry. `check_reads.py` finds that statically;
+    # sibling crates reached the registry. `checks/check_reads.py` finds that statically;
     # this runs the step anyway, over the crate's own vendored sources, and shows
     # cbindgen's own message when it cannot read them.
     - name: Apple build script
       if: inputs.apple == 'true'
       shell: bash
       working-directory: ${{ inputs.stage }}
-      run: python3 "$GITHUB_WORKSPACE/apple_build_check.py" --stage .
+      run: python3 "$GITHUB_WORKSPACE/checks/apple_build_check.py" --stage .
 
     # The dry run packages each crate and compiles it as the root of a build,
     # which is the only check that the published artifact builds. Resolving a
@@ -149,7 +149,7 @@ runs:
     - name: Publish dry run
       shell: bash
       working-directory: ${{ inputs.stage }}
-      run: python3 "$GITHUB_WORKSPACE/publish.py" --stage . --dry-run
+      run: python3 "$GITHUB_WORKSPACE/pipeline/publish.py" --stage . --dry-run
 
     # The closing gate. `cargo publish --dry-run` compiles each tarball as the
     # root of a build, which resolves the package's dev-dependencies and is why
@@ -162,4 +162,4 @@ runs:
       if: inputs.isolated == 'true'
       shell: bash
       working-directory: ${{ inputs.stage }}
-      run: python3 "$GITHUB_WORKSPACE/test_isolated.py" --stage .
+      run: python3 "$GITHUB_WORKSPACE/checks/test_isolated.py" --stage .
