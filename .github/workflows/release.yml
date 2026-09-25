@@ -240,6 +240,21 @@ jobs:
           workspaces: src -> target
           key: ${{ needs.prepare.outputs.target }}
 
+      # This job compiles the closure, even though nothing here looks like a
+      # build: `cargo publish` verifies a release by unpacking the tarball and
+      # building it as the root of its own build, which links the same system
+      # libraries the checks link. Without them a build script dies rather than
+      # failing usefully — 1.21.0 stopped at `yeslogic-fontconfig-sys`, whose
+      # build script unwraps a `pkg-config` result for a fontconfig that was not
+      # installed. It is reached through parley's `fontique`, so the crate that
+      # pays is `bite-gp-parley`, and the exit is a panic (101) rather than a
+      # failed link.
+      #
+      # The verification workflow installs this through `verify`; separate from
+      # it deliberately, because the checks are `verify.yml`'s and this is a
+      # prerequisite for compiling at all, not a check.
+      - uses: ./.github/actions/linux-deps
+
       - name: Stage
         env:
           TARGET: ${{ needs.prepare.outputs.target }}
