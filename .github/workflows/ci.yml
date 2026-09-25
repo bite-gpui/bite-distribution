@@ -1,8 +1,8 @@
 # Verify a pull request against the target table, the naming rule, and one
 # staged target per lineage.
 #
-# The full ten targets are not verified here. Each one is a cold build of gpui
-# and its backends, so ten of them on every push is hours of CI for a change to
+# The full twelve targets are not verified here. Each one is a cold build of gpui
+# and its backends, so twelve of them on every push is hours of CI for a change to
 # a script. `default` is one target per lineage; dispatch with `all` when the
 # change is one that could affect every branch.
 name: CI

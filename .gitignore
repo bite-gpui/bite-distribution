@@ -7,6 +7,11 @@ wt/
 # Reports from a local publish dry run.
 dist-stage.json
 
+# Publish transcripts. The release workflow keeps its own as a run artifact; a
+# hand release writes one here.
+publish.log
+publish-resume.log
+
 __pycache__/
 *.pyc
 wt-*/

@@ -6,9 +6,9 @@ Two things make this more than a loop over `cargo publish`.
 **Ordering and resume.** crates.io versions are immutable, so a run that is
 interrupted halfway must continue rather than restart, and a version that
 already exists is a skip, not an error. The order comes from stage.py's report,
-which computes it from the manifests; the two forks and the eight release
-targets have different leaf sets, so a hand-kept list would be wrong for most of
-them.
+which computes it from the manifests; the two rolling targets and the ten
+release targets have different leaf sets, so a hand-kept list would be wrong for
+most of them.
 
 **Resolving a first release.** `cargo publish` resolves a dependency with a
 `version` from the registry, not from its `path`, and it resolves *before* it
@@ -352,7 +352,10 @@ def main(argv: list[str]) -> int:
 
     if not args.dry_run and not registry_token_present():
         print(
-            "no crates.io token: run `cargo login`, or set CARGO_REGISTRY_TOKEN",
+            "no crates.io token. In CI this means the secret is missing: it belongs "
+            "on the `crates-io` environment as CARGO_REGISTRY_TOKEN, which the "
+            "release workflow reads. For a hand release, `cargo login` or the same "
+            "variable in the shell.",
             file=sys.stderr,
         )
         return 2

@@ -8,7 +8,7 @@ lineage) and `bite-gpui-ce` / `bite-gp-ce-*` (community-edition lineage).
 The design is in [DESIGN.md](DESIGN.md). Read §13 of it first — it lists the
 decisions still open, one of which has legal weight.
 
-All ten target branches live in one repository, `bite-gpui/bite-gpui`: eight
+All twelve target branches live in one repository, `bite-gpui/bite-gpui`: ten
 descend from zed releases, `bite_master` from zed's main, and `bite_ce_main`
 from the community edition's fork point. They share an ancestor but have
 diverged, so each target declares its lineage rather than having it inferred
@@ -49,7 +49,7 @@ being released.
 
 | file | what it does |
 | --- | --- |
-| `targets.toml` | the ten target branches, their lineage, version scheme and URLs |
+| `targets.toml` | the twelve target branches, their lineage, version scheme and URLs |
 | `inventory.py` | resolves a checkout's in-path dependency closure, and the publish order |
 | `naming.py` | source package → published crate name; `--verify` checks it per target |
 | `targets.py` | validates and selects targets; `--tags` says what to tag; `--matrix` and `--env` feed CI |
@@ -69,7 +69,7 @@ python3 inventory.py --repo . --root gpui --root gpui_parley --summary
 python3 targets.py --tags --select all
 
 # every target's closure, with names and collisions checked
-python3 naming.py --verify --lineage-repo zed=. --lineage-repo ce=.tools/wt-ce
+python3 naming.py --verify --lineage-repo zed=. --lineage-repo ce=.tools/worktrees/wt-ce
 
 # the whole union of published names
 python3 naming.py --table
@@ -82,16 +82,35 @@ python3 publish.py --stage src --dry-run
 
 ## Releasing
 
-The version is the version the branch tip is **tagged** with, so a release is:
+The version is the version the branch tip is **tagged** with, so the tag is the
+release, and pushing it is what publishes:
 
 ```sh
-python3 targets.py --tags --select default      # what the tag should be called
-git tag -a bite_1.20.200 -m bite_1.20.200 && git push origin bite_1.20.200
+python3 targets.py --tags --select all       # what each branch must be tagged
+git tag -a bite_1.21.0 -m bite_1.21.0 && git push origin bite_1.21.0
 ```
 
-Staging refuses to run for a release target whose tip is untagged, and names the
-command. That is deliberate: a commit on a release branch cannot ship without the
-version changing, and the version is what a consumer pins.
+`.github/workflows/release.yml` runs on that push: it resolves the tag back to
+its target (`targets.py --for-tag`), runs the gate on the branch, and publishes
+with the token in the `crates-io` environment — no `cargo login`, no local
+credential file, and the release is reproducible from the tag alone. Staging
+refuses a release target whose tip is untagged and names the command, so the tag
+is the only thing that can name the version and a release cannot drift from it.
+
+Everything else is a dispatch, which is also the dry-run path:
+
+```sh
+# stage and verify a target without uploading
+gh workflow run release.yml -f target=bite_v1.21.0 -f dry_run=true
+
+# a rolling target has no release tag to push, so it is named explicitly
+gh workflow run release.yml -f target=bite_ce_main -f confirm=bite_ce_main -f dry_run=false
+```
+
+**Configure the `crates-io` environment with required reviewers before relying on
+the tag trigger.** The environment is the approval gate and the only place the
+token is reachable; without reviewers, pushing a tag publishes unattended. Dry
+runs exist so a target can be validated before its tag is pushed at all.
 
 ## CI
 
@@ -101,12 +120,18 @@ version changing, and the version is what a consumer pins.
 - `.github/actions/gate/action.yml` — the gate, shared with the release
   workflow: system deps, resolve, check, clippy `-D warnings`, test, package
   file sets, publish dry run.
-- `.github/workflows/release.yml` — manual dispatch with a confirmation input,
-  `dry_run` defaulting to true, and the real publish behind the `crates-io`
-  environment.
+- `.github/workflows/release.yml` — a `bite_*` tag push, or manual dispatch.
+  Dispatch takes the target, a confirmation that must repeat it for a real
+  publish, and `dry_run` (default true); a tag push resolves the target from the
+  tag and publishes. Both paths run the gate, and only the publish job names the
+  `crates-io` environment, so `CARGO_REGISTRY_TOKEN` reaches exactly one step of
+  one job behind an approval.
 
 The workflows need `SOURCE_READ_TOKEN` if the source repository is private, and
-`CARGO_REGISTRY_TOKEN` in the `crates-io` environment for a real publish.
+`CARGO_REGISTRY_TOKEN` as a secret on the `crates-io` environment for a real
+publish. Neither is reachable from a pull request: the release workflow has no
+pull-request trigger. A local `cargo login` is now only for hand runs from a
+prepared stage tree, which is how the first release was done.
 
 ## Validated so far
 
@@ -143,5 +168,23 @@ crates *outside* the closure that depend on renamed ones break the whole
 workspace even though they are not published.
 
 Not yet run: the compile gates locally (this host is at 98% disk and a full
-closure build needs tens of GB — CI runs them), the wasm32 check for `gpui_web`
-(DESIGN §10), and any real publish.
+closure build needs tens of GB — CI runs them) and the wasm32 check for
+`gpui_web` (DESIGN §10).
+
+## Published
+
+Every crate of `bite_v1.20.2` is on crates.io at `1.20.203` — the zed lineage's
+31 names. The first release was published by hand from a prepared stage tree,
+which is why `publish.py` writes the `.cargo/config.toml` a plain
+`cargo publish` needs; it was rate-limited partway and resumed with
+`--only <crate>`, which is the behaviour that makes a multi-crate release
+survivable. Releases from here go through the workflow instead.
+
+`bite_v1.21.0` is the next one, and it is staged and clean at `1.21.0`: 31
+crates, 39 dependency rewrites, 5 licences copied, 30 native and 1 wasm-only
+(`bite-gp-web`), 24 with tests, none withheld, no unresolved or dev-only git
+dependencies. Its name set is **identical** to `bite_v1.20.2`'s, so it publishes
+new *versions* of names that already exist rather than new names — the 30-version
+burst and one a minute (DESIGN §11), not the five-name burst that made the first
+release take hours. It needs no `0.0.0-reserved` step either, for the same
+reason: every name it depends on is already on the registry.

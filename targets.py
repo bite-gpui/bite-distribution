@@ -10,6 +10,7 @@ Usage:
     targets.py --validate
     targets.py --matrix --select all
     targets.py --refs --select default
+    targets.py --for-tag bite_1.21.0
     targets.py --env bite_ce_main
 """
 
@@ -32,7 +33,7 @@ LINEAGES = ("zed", "ce")
 # version. `calver`: a rolling tip, dated at staging time.
 SCHEMES = ("release-tag", "calver")
 
-# One target per lineage: what a pull request verifies. The full ten are a
+# One target per lineage: what a pull request verifies. The full twelve are a
 # cold-build of gpui on three platforms' worth of code per target, which is not
 # something to run on every push.
 DEFAULT = ("bite_v1.20.2", "bite_ce_main")
@@ -156,6 +157,35 @@ def release_tag(upstream: str, amendment: int) -> str:
     return "bite_" + published_version(upstream, amendment)
 
 
+def target_for_tag(targets: list[dict], tag: str) -> dict:
+    """The release target a pushed tag belongs to.
+
+    The tag encodes the published version, and the table already computes the
+    tag each release target must carry, so the release workflow resolves a tag
+    push without a checkout and without parsing the tag.
+
+    Rolling (`calver`) targets are excluded on purpose. Their version is a date,
+    so both lineages could push a tag of the same name and the tag would not say
+    which branch it meant; they are released by dispatch, which names the target.
+    """
+    frozen = [t for t in targets if t.get("version_from", "release-tag") == "release-tag"]
+    matches = [t for t in frozen if release_tag(t["upstream"], t.get("amendment", 0)) == tag]
+    if len(matches) == 1:
+        return matches[0]
+    if len(matches) > 1:
+        names = ", ".join(sorted(t["name"] for t in matches))
+        raise SystemExit(f"{tag} matches more than one target ({names}); a tag must name one")
+
+    known = sorted(release_tag(t["upstream"], t.get("amendment", 0)) for t in frozen)
+    rolling = sorted(t["name"] for t in targets if t not in frozen)
+    raise SystemExit(
+        f"no release target carries {tag}. A tag push must be one of:\n  "
+        + "\n  ".join(known)
+        + f"\nThe rolling targets ({', '.join(rolling)}) publish on the CalVer series "
+        "and are released by dispatch, which names the target."
+    )
+
+
 def tags_at_head(repo: Path) -> list[str]:
     """Release tags pointing at HEAD, by OID comparison, not ancestry."""
     result = subprocess.run(
@@ -265,6 +295,8 @@ def main(argv: list[str]) -> int:
                         help="emit repository= and <lineage>=<branch> lines for $GITHUB_OUTPUT")
     parser.add_argument("--tags", action="store_true",
                         help="print the release tag each selected target must carry")
+    parser.add_argument("--for-tag", metavar="TAG",
+                        help="print the release target a pushed bite_* tag belongs to")
     parser.add_argument("--names", action="store_true")
     parser.add_argument("--env", metavar="NAME", help="emit key=value lines for $GITHUB_OUTPUT")
     parser.add_argument("--show")
@@ -283,6 +315,10 @@ def main(argv: list[str]) -> int:
 
     if args.refs:
         print("\n".join(references(targets, args.select)))
+        return 0
+
+    if args.for_tag:
+        print(target_for_tag(targets, args.for_tag)["name"])
         return 0
 
     if args.env:

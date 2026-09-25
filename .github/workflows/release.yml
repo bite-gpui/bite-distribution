@@ -1,29 +1,48 @@
 # Publish one target's crates to crates.io.
 #
-# Manual by default. crates.io versions are immutable, so a release is not
-# something to trigger from a branch push until the scheme has been proven by
-# dry runs; `dry_run` therefore defaults to true and the real path has to be
-# asked for explicitly. Once a target's dry runs are trustworthy, add a push
-# trigger for its branch alongside the dispatch.
+# Two ways in.
+#
+# A **tag push** is the release act. `bite_1.21.0` releases `bite_v1.21.0`,
+# because the tag is what staging reads the version from — targets.py already
+# computes the tag each release target must carry, so the workflow resolves the
+# branch from the tag rather than parsing it. Staging then refuses to run unless
+# the branch tip carries that exact tag, so what a tag push publishes cannot
+# drift from what the tag says.
+#
+# A **dispatch** is for everything else: a dry run, and the rolling targets
+# (`bite_master`, `bite_ce_main`), whose version is a date, so both lineages
+# could push a tag of the same name and the tag would not say which branch it
+# meant. Those are named explicitly.
+#
+# crates.io versions are immutable, so the real path is fenced three times: a
+# dispatch must ask for it and repeat the target name; either way the publish job
+# waits on the `crates-io` environment, which is where the token lives and where
+# required reviewers belong; and a single `registry-publish` concurrency group
+# means two releases never overlap. The token is a repository/Environment secret
+# and never reaches a pull request, because this workflow has no pull-request
+# trigger.
 name: Release
 
 on:
   workflow_dispatch:
     inputs:
       target:
-        description: 'target name from targets.toml (e.g. bite_v1.20.2)'
+        description: 'target name from targets.toml (e.g. bite_v1.21.0, bite_ce_main)'
         required: true
       confirm:
-        description: 'repeat the target name to confirm the publish'
-        required: true
+        description: 'repeat the target name to confirm a real publish'
+        required: false
+        default: ''
       dry_run:
         description: 'package and verify without uploading'
         type: boolean
         required: false
         default: true
+  push:
+    tags: ['bite_*']
 
-# Stable and preview uploads share one crates.io namespace, and the eight
-# release targets share crate names, so two releases must never overlap.
+# Stable and preview uploads share one crates.io namespace, and the release
+# targets share crate names, so two releases must never overlap.
 concurrency:
   group: registry-publish
   cancel-in-progress: false
@@ -43,25 +62,77 @@ jobs:
     name: resolve the target
     runs-on: ubuntu-latest
     outputs:
+      target: ${{ steps.resolve.outputs.target }}
       repository: ${{ steps.resolve.outputs.repository }}
       branch: ${{ steps.resolve.outputs.branch }}
+      version: ${{ steps.resolve.outputs.version }}
+      dry_run: ${{ steps.mode.outputs.dry_run }}
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v5
         with:
           python-version: '3.13'
 
-      - name: Refuse an unconfirmed publish
-        if: inputs.dry_run == false && inputs.confirm != inputs.target
-        run: |
-          echo "confirm (${{ inputs.confirm }}) does not match target (${{ inputs.target }})" >&2
-          exit 1
+      - name: Validate the table
+        run: python3 targets.py --validate
 
-      - id: resolve
+      # The tag and the dispatch input are both external strings. They reach the
+      # shell as environment variables rather than substitutions, so a tag
+      # containing shell metacharacters stays a string and never a command.
+      - name: Resolve the target
+        id: resolve
+        env:
+          EVENT: ${{ github.event_name }}
+          TAG: ${{ github.ref_name }}
+          INPUT_TARGET: ${{ inputs.target }}
         run: |
           set -euo pipefail
-          python3 targets.py --env '${{ inputs.target }}' >> "$GITHUB_OUTPUT"
-          echo "resolved ${{ inputs.target }}"
+          if [ "$EVENT" = "push" ]; then
+            name="$(python3 targets.py --for-tag "$TAG")"
+            echo "tag $TAG resolves to $name"
+          else
+            name="$INPUT_TARGET"
+          fi
+          # Emits target=, repository=, branch=, lineage=, upstream=,
+          # amendment= and version= for $GITHUB_OUTPUT.
+          python3 targets.py --env "$name" >> "$GITHUB_OUTPUT"
+
+      - name: Refuse an unconfirmed publish
+        if: >-
+          github.event_name == 'workflow_dispatch'
+          && inputs.dry_run == false
+          && inputs.confirm != inputs.target
+        env:
+          CONFIRM: ${{ inputs.confirm }}
+          TARGET: ${{ inputs.target }}
+        run: |
+          echo "confirm ($CONFIRM) does not match target ($TARGET)" >&2
+          exit 1
+
+      - name: Decide whether this run publishes
+        id: mode
+        env:
+          EVENT: ${{ github.event_name }}
+          REQUESTED: ${{ inputs.dry_run }}
+        run: |
+          # A tag push is the release act; a dispatch defaults to a dry run.
+          if [ "$EVENT" = "push" ]; then
+            echo "dry_run=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "dry_run=$REQUESTED" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Summarise
+        env:
+          MODE: ${{ steps.mode.outputs.dry_run }}
+          TARGET: ${{ steps.resolve.outputs.target }}
+          VERSION: ${{ steps.resolve.outputs.version }}
+        run: |
+          if [ "$MODE" = "false" ]; then
+            echo "::notice title=release::$TARGET $VERSION will be published to crates.io"
+          else
+            echo "::notice title=dry run::$TARGET $VERSION will be staged and verified, not uploaded"
+          fi
 
   gate:
     needs: prepare
@@ -104,17 +175,21 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src -> target
-          key: ${{ inputs.target }}
+          key: ${{ needs.prepare.outputs.target }}
 
       - name: Stage
-        run: python3 stage.py --target '${{ inputs.target }}' --source src
+        env:
+          TARGET: ${{ needs.prepare.outputs.target }}
+        run: python3 stage.py --target "$TARGET" --source src
 
       - name: Record the version being released
         id: version
+        env:
+          TARGET: ${{ needs.prepare.outputs.target }}
         run: |
           version="$(python3 -c "import json;print(json.load(open('src/dist-stage.json'))['version'])")"
           echo "version=$version" >> "$GITHUB_OUTPUT"
-          echo "::notice title=${{ inputs.target }}::publishing ${{ inputs.target }} $version"
+          echo "::notice title=$TARGET::staged $TARGET as $version"
 
       - uses: ./.github/actions/gate
         with:
@@ -122,16 +197,23 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: stage-${{ inputs.target }}
+          name: stage-${{ needs.prepare.outputs.target }}
           path: src/dist-stage.json
 
   publish:
     needs: [gate, prepare]
-    if: inputs.dry_run == false
+    # A tag push publishes; a dispatch publishes only when it said so.
+    if: needs.prepare.outputs.dry_run == 'false'
     runs-on: ubuntu-latest
     # Approval gate, and where CARGO_REGISTRY_TOKEN lives. Configure the
-    # environment with required reviewers before the first real publish.
+    # environment with required reviewers before the first automated publish:
+    # with the tag trigger, a push otherwise reaches crates.io unattended.
     environment: crates-io
+    # A first release of a new name family is rate-limited to about four hours
+    # (DESIGN §11); a new version of a name that already exists is minutes. The
+    # job ceiling is six hours — stop short of it rather than be killed midway
+    # through a release, which is resumable but noisy.
+    timeout-minutes: 350
     steps:
       - uses: actions/checkout@v5
       - uses: actions/checkout@v5
@@ -151,16 +233,37 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src -> target
-          key: ${{ inputs.target }}
+          key: ${{ needs.prepare.outputs.target }}
 
       - name: Stage
-        run: python3 stage.py --target '${{ inputs.target }}' --source src
+        env:
+          TARGET: ${{ needs.prepare.outputs.target }}
+        run: python3 stage.py --target "$TARGET" --source src
 
       # Deliberately not the gate action: the gate already ran on this commit,
       # and re-running tests here would hold the registry lock for the length of
-      # a full build. The dry run below is the part that must see the exact
-      # artifacts being uploaded.
+      # a full build. This is also the only place the registry token is exposed,
+      # and this job is the only one that names the `crates-io` environment.
+      #
+      # The token comes from the secret, not from a `cargo login` on a developer
+      # machine: a release is then reproducible from the tag alone, and no local
+      # credential file is needed or shared.
       - name: Publish
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-        run: python3 publish.py --stage src
+          TARGET: ${{ needs.prepare.outputs.target }}
+        run: |
+          set -o pipefail
+          python3 publish.py --stage src 2>&1 | tee publish.log
+
+      # A rate-limited first release is interrupted more often than it fails, so
+      # the log is the thing to read: it names the crate that stopped the run and
+      # the time the next attempt is allowed, which is what `--only <crate>`
+      # resumes from.
+      - name: Keep the publish log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: publish-${{ needs.prepare.outputs.target }}
+          path: publish.log
+          if-no-files-found: ignore

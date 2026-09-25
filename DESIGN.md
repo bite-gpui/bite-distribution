@@ -75,7 +75,7 @@ Ten targets, one per branch. `.dist/targets.toml` is the source of truth and
 released version is derived from it and declared by the branch's tag (§6).
 `targets.py --tags` prints the tag each selected target must carry.
 
-All ten live in one repository, `git@github.com:bite-gpui/bite-gpui.git`. They share
+All twelve live in one repository, `git@github.com:bite-gpui/bite-gpui.git`. They share
 a common ancestor — ce is a fork of zed, not a separate lineage — but they have
 diverged since, so what a target publishes differs even where the crate names are
 the same. That is why the table declares a lineage per target instead of
@@ -126,7 +126,7 @@ Measured closures (normal + build reachability):
 | `bite_ce_main` | 26 | ce's own `gpui_ce_*` set replaces the vendored zed crates |
 
 Union across targets: **50 source packages**. The release-line closure did not
-change over the eight branches — 1.14 and 1.21.0-pre resolve to exactly the same
+change over the ten branches — 1.14 and 1.21.0-pre resolve to exactly the same
 31 crates, and `bite_master` is that set minus `media` — but the gate re-measures
 per materialized worktree rather than assuming it.
 
@@ -618,8 +618,17 @@ published last, or a zed-internal crate that is never published at all. The set
 is derived from the manifests by `stage.py` (reported as `no_verify`) rather than
 hand-kept, and the workspace-wide `cargo check` in the gate covers the
 compilation that skips. And the order comes from the manifests rather than a
-hand-kept list, because the two lineages and eight release targets have
+hand-kept list, because the two lineages and ten release targets have
 different leaf sets.
+
+**Status, once the first release is done.** The zed lineage's thirty-one names
+are published from `1.20.203`, which changes what the next release costs rather
+than merely proving the pipeline. New *versions* of names that already exist are
+the cheap case — a burst of thirty, then one a minute — so a release of a target
+whose name set is unchanged is minutes, and `bite_v1.21.0`'s is unchanged. The
+expensive case is a new name family, and it is paid once per lineage rather than
+once per release: the five-name burst, the hours of pacing, and the one-time
+reservation of a name that must exist before anything may name it.
 
 ## 12. CI
 
@@ -655,17 +664,31 @@ deliberately outside `target/` — the directory the build cache is keyed on —
 second closure's worth of artifacts is never cached, and the directory is
 disposable between runs.
 
-`.github/workflows/release.yml` — manual `workflow_dispatch` taking the target
-name, a confirmation input that must repeat it, and `dry_run` defaulting to
-true. The publish job runs behind the `crates-io` environment (add required
-reviewers and the token there) under a single `registry-publish` concurrency
-group, because the eight release targets share crate names and crates.io
+`.github/workflows/release.yml` — two ways in.
+
+A **tag push** is the release act: `bite_1.21.0` releases `bite_v1.21.0`.
+`targets.py --for-tag` resolves the tag back to its target, because the table
+already computes the tag each release target must carry — so the workflow never
+parses a tag, and a tag cannot name a version that no target declares. Staging
+then refuses to run unless the branch tip carries exactly that tag, which is what
+makes "the tag is the version" a check rather than a convention.
+
+A **dispatch** takes the target name, a confirmation input that must repeat it
+for a real publish, and `dry_run` defaulting to true. It is the dry-run path, and
+the only way to release a rolling target: `bite_master` and `bite_ce_main`
+publish on the CalVer series, so both lineages could push a tag of the same name
+and the tag would not say which branch meant it. `--for-tag` refuses such a tag
+with that reason rather than guessing.
+
+The publish job runs behind the `crates-io` environment — required reviewers and
+the token belong there, and with the tag trigger in place that environment is the
+only thing between a push and crates.io — under a single `registry-publish`
+concurrency group, because the release targets share crate names and crates.io
 versions are immutable. It does not re-run the full gate: that already passed on
 the same commit, and holding the registry lock through a test suite is how a
-release ends up half done.
-
-Adding a push trigger for a branch is a one-line change once that target's dry
-runs are trustworthy; it is deliberately not there yet.
+release ends up half done. It does keep the publish log as an artifact, which is
+what names the crate a rate limit stopped the run at and when the next attempt is
+allowed.
 
 ## 13. Open decisions
 
