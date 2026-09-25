@@ -90,9 +90,8 @@ The version is the version the branch tip is **tagged** with, so a release is a
 tag. The `Tag` workflow creates it and starts the publish:
 
 ```sh
-gh workflow run tag.yml -f branch=bite_v1.21.0               # report: which tag, does it exist
-gh workflow run tag.yml -f branch=bite_v1.21.0 -f dry_run=false   # tag it and publish
-gh workflow run tag.yml -f branch=bite_v1.21.0 -f dry_run=false -f force=true  # re-publish
+gh workflow run tag.yml -f branch=bite_v1.21.0                     # report: which tag, does it exist
+gh workflow run tag.yml -f branch=bite_v1.21.0 -f dry_run=false    # tag if needed, then publish
 ```
 
 `branch` and `target` are `choice` lists of the **source repository's** branches —
@@ -103,24 +102,27 @@ workflow from", selects this repository, because that is where the workflow file
 lives; it is not the branch being released.)
 
 `tag.yml` resolves the branch to its target, derives the tag from the table
-(`tag_release.py`), refuses a branch whose tip has moved under an existing tag,
-pushes the tag, and dispatches the publish. `dry_run` defaults to true and only
-reports — a report is an answer, not a failure, so it exits zero and puts the
-verdict in its summary (`untagged`, `already-tagged`, `conflict`, `rolling`).
+(`tag_release.py`), pushes the tag when there is one to push, and dispatches the
+publish. `dry_run` defaults to true and only reports — a report is an answer, not a
+failure, so it exits zero and puts the verdict in its summary (`untagged`,
+`already-tagged`, `conflict`, `rolling`).
 
-`force` is for the release that was tagged and then failed to publish — a rate
-limit or a tooling bug — and finishes it by publishing the same version again,
-which resumes rather than duplicates. It never moves a tag: a tag naming a
-different commit is refused even with `force`, and the answer there is to bump the
-target's `amendment` (DESIGN §6). A rolling target has no tag at all, and `tag.yml`
-says so and dispatches the publish directly.
+**A branch whose tip already carries its tag is not an error**, and needs no flag:
+that is the ordinary state of a release that did not finish, and finishing it is
+publishing. Re-publishing a version that is already on crates.io is a no-op there,
+so a re-run resumes rather than duplicates — which is why a rate limit or a tooling
+bug is recovered by simply running the same command again. A **`conflict`** is the
+one refusal, and it is not overridable: it means the tag names a *different* commit,
+so the content under a published version changed, and the answer is to bump the
+target's `amendment` (DESIGN §6) rather than to move a tag. A rolling target has no
+tag at all, and `tag.yml` says so and dispatches the publish directly.
 
 The tag is still the contract: staging refuses a release target whose tip is
 untagged and names the command. But it is not a trigger, and it cannot be one from
 here — the tags live in the source repository, and a `push: tags` trigger in this
 one would be watching the wrong repository and could never fire. A tag pushed by
-hand therefore starts nothing; release that branch with `tag.yml` and
-`-f force=true`, which is the same run that would have pushed the tag itself.
+hand therefore starts nothing; run `tag.yml` for that branch, which is the same run
+that would have pushed the tag itself, and it will find nothing to tag and publish.
 
 A rolling target, or a bare dry run of the pipeline, goes straight to dispatch:
 

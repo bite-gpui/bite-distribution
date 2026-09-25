@@ -5,6 +5,11 @@
 # an existing tag, pushes the tag to the source repository, and dispatches the
 # publish workflow.
 #
+# A tip that already carries its own tag is not refused: that is the ordinary state
+# of a release that did not finish, and finishing it is publishing. Re-publishing a
+# version that is already on crates.io is a no-op there, so a re-run is safe —
+# which is also why this is the way to finish a botched release.
+#
 # It has to dispatch rather than let a tag trigger do it, and for a second reason
 # beyond GITHUB_TOKEN's recursion rule: the `bite_*` tags live in the *source*
 # repository, and `release.yml` lives in this one, so a `push: tags` trigger there
@@ -43,11 +48,6 @@ on:
           - bite_master
           - bite_ce_main
         required: true
-      force:
-        description: 'proceed when the tip is already tagged: publishing a version not yet uploaded, or re-publishing a botched release'
-        type: boolean
-        required: false
-        default: false
       dry_run:
         description: 'resolve and report only — do not push a tag or publish'
         type: boolean
@@ -125,12 +125,10 @@ jobs:
         id: tag
         env:
           BRANCH: ${{ inputs.branch }}
-          FORCE: ${{ inputs.force }}
           DRY_RUN: ${{ inputs.dry_run }}
         run: |
           set -euo pipefail
           args=(--branch "$BRANCH" --repo src)
-          if [ "$FORCE" = "true" ]; then args+=(--force); fi
           if [ "$DRY_RUN" != "true" ]; then args+=(--push); fi
           python3 tag_release.py "${args[@]}" >> "$GITHUB_OUTPUT"
 

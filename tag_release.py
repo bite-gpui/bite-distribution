@@ -5,20 +5,23 @@ A release is a tag and the tag is the version (DESIGN §6): staging refuses a
 release target whose tip is untagged, so the tag is the only thing that can name
 what is being released. This is the step that creates it. It answers the three
 questions a maintainer actually has — which tag, does it already exist, is this
-the commit that was tagged — and pushes the tag only when the answer is "not
-yet".
+the commit that was tagged — and pushes the tag when there is one to push.
 
     tag_release.py --branch bite_v1.21.0 --repo src              # report only
-    tag_release.py --branch bite_v1.21.0 --repo src --push       # tag and push
-    tag_release.py --branch bite_v1.21.0 --repo src --push --force
+    tag_release.py --branch bite_v1.21.0 --repo src --push       # tag and publish
 
-`--force` is for the release that was tagged and then failed to publish. A
-crates.io *version* is immutable, but the upload is not: a run that died on a
-rate limit or a tooling bug is finished by publishing the same version again, and
-`publish.py` skips what already landed. `--force` therefore allows a run that has
-nothing left to tag; it never moves a tag. A tag naming a different commit is
-refused even with `--force`, because the content under a version is not allowed to
-change — the answer there is to bump the target's `amendment` (DESIGN §6).
+**A tag that is already at the tip is not a refusal.** That is the ordinary state
+of a branch whose release did not finish: a crates.io *version* is immutable, but
+the upload is not, so a run that died on a rate limit or a tooling bug is finished
+by publishing the same version again, and `publish.py` skips what already landed.
+Tagging has nothing left to do, so it says so and leaves the publishing to the
+workflow that calls this.
+
+**A tag naming a different commit is a refusal, always.** The content under a
+published version is not allowed to change, so that is not something to override
+with a flag — the answer is to bump the target's `amendment` (DESIGN §6), which
+mints a new version for the new content. Moving the tag instead would be a false
+statement about what was released.
 
 The remote is asked, not the local clone: a tag that exists only locally has not
 been released, and one that exists remotely at another commit is the case above.
@@ -91,8 +94,6 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--remote", default="origin")
     parser.add_argument("--push", action="store_true",
                         help="create the tag if it is missing and push it")
-    parser.add_argument("--force", action="store_true",
-                        help="proceed when the branch tip is already tagged")
     args = parser.parse_args(argv)
 
     table = targets.load()
@@ -143,18 +144,16 @@ def main(argv: list[str]) -> int:
         tip=tip,
     )
 
-    if already and not args.force:
-        note(
-            f"{args.branch} is already tagged {tag} at {tip[:10]}, so there is "
-            "nothing to tag. If the release itself failed — a rate limit, a tooling "
-            "bug — re-run with force to publish the same version again; crates.io "
-            "skips versions that already exist, so that resumes rather than "
-            "duplicates. If the content changed instead, bump the amendment."
-        )
-        return 2 if args.push else 0
-
     if already:
-        note(f"{tag} is already at {tip[:10]}; nothing to push, the publish can be re-run.")
+        # Not a refusal: a tip that carries its own tag is the ordinary state of a
+        # release that did not finish, and finishing it means publishing, which is
+        # the caller's next step. A version already on crates.io is skipped there,
+        # so this is safe to do repeatedly.
+        note(
+            f"{args.branch} is already tagged {tag} at {tip[:10]}, so there is nothing "
+            f"to tag. Publishing {version} again resumes rather than duplicates: "
+            "crates.io skips versions that already exist."
+        )
         return 0
 
     if not args.push:
@@ -165,8 +164,8 @@ def main(argv: list[str]) -> int:
     if local and tag not in targets.tags_at_head(repo):
         raise SystemExit(
             f"a local tag {tag} exists and does not point at HEAD. Delete it "
-            "deliberately, or bump the amendment — do not force it, because a moved "
-            "tag is a false statement about what was released."
+            "deliberately, or bump the amendment — nothing here will move it, because a "
+            "moved tag is a false statement about what was released."
         )
     if not local:
         run("git", "tag", "-a", tag, "-m", tag, cwd=repo)

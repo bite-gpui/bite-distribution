@@ -698,13 +698,15 @@ and `--for-tag` is the lookup it would need.
 
 `tag_release.py` carries the judgement, so it is testable without CI: it resolves
 the branch to its target, computes the version from the table, asks the *remote*
-what tags it has, and then either pushes, refuses, or reports. `--force` is for
-the release that was tagged and then failed — a rate limit, a tooling bug — where
-re-publishing the same version resumes rather than duplicates; it never moves a
-tag, because a tag naming a different commit would be a false statement about what
-was released, and the fix there is an `amendment` bump (§6). A report-only run
-exits zero whatever it finds — checking is an answer, not a failure — and an
-exit status that refuses belongs only to a run that was asked to push.
+what tags it has, and then either pushes or reports. Exactly one state is refused,
+and it is the one not to override: a tag that names a *different* commit, because
+the content under a published version is not allowed to change and the answer is an
+`amendment` bump (§6) that mints a new version rather than a moved tag. A tip that
+already carries its own tag is **not** refused — that is a release that did not
+finish, and finishing it means publishing, which `publish.py` makes idempotent by
+skipping what already landed. A report-only run exits zero whatever it finds —
+checking is an answer, not a failure — and an exit status that refuses belongs only
+to a run that was asked to push.
 
 `.github/workflows/release.yml` — dispatch only. It takes the target, a
 confirmation input that must repeat it for a real publish, and `dry_run`
