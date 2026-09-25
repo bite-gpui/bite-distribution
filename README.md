@@ -5,11 +5,11 @@ branch, carve the path-dependency closure out of the monorepo, rename the
 packages, and release them to crates.io as `bite-gpui` / `bite-gp-*` (zed
 lineage) and `bite-gpui-ce` / `bite-gp-ce-*` (community-edition lineage).
 
-The design is in [DESIGN.md](DESIGN.md), which is the map: the chapters are in
-`docs/`, and they keep their section numbers, so `§6` is `§6` wherever it is
-cited — here, in the chapters, and in the comments in `targets.toml` and
-`pipeline/`. Start with [docs/decisions.md](docs/decisions.md), where each
-decision carries its status, including the one with legal weight.
+The design is the [architecture specification](DESIGN.md), which is the map: the
+chapters are in `docs/`, and they keep their section numbers, so `§6` is `§6`
+wherever it is cited — here, in the chapters, and in the comments in
+`targets.toml` and `pipeline/`. Start with [docs/decisions.md](docs/decisions.md),
+where each decision carries its status, including the one with legal weight.
 
 All twelve target branches live in one repository, `bite-gpui/bite-gpui`: ten
 descend from zed releases, `bite_master` from zed's main, and `bite_ce_main`

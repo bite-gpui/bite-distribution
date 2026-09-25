@@ -1,6 +1,6 @@
 # Staging
 
-§7–§9 of the [bite-gpui distribution design](../DESIGN.md). Sections keep
+§7–§9 of the [bite-gpui distribution specification](../DESIGN.md). Sections keep
 their numbers across all of these files, so `§6` means the same thing here, in
 the other chapters, and in `targets.toml`.
 
