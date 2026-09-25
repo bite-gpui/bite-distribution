@@ -9,11 +9,13 @@ what each check exists to catch.
 
 ## 10. Verification
 
-Run by `ci.yml` against the staged checkout, per target: dispatch it for a target
-and this is what runs over that branch's staged tree. `release.yml` deliberately
-does not — it stages and publishes — so a release rests on a `ci.yml` run for the
-same commit. It is one entry point over four actions, so there is one copy of the
-sequence rather than one per workflow, and a phase can also be run on its own:
+Run by `verify.yml` against the staged checkout, per target: it is the one
+definition of what verifying a target means, dispatched to verify on demand and
+called by `ci.yml` for the targets a pull request stages. A dispatched run also
+leaves a receipt — `verified-<target>-<version>`, the stage report itself — which
+is what `release.yml` requires before it will publish ([§11](release.md)). It is
+one entry point over four actions, so there is one copy of the sequence rather
+than one per workflow, and a phase can also be run on its own:
 
 | action | what it is | cost |
 | --- | --- | --- |

@@ -137,9 +137,10 @@ reservation of a name that must exist before anything may name it.
   Linux alone, and the labels are declared once, in `pipeline/targets.py --matrix`, rather
   than in the workflow.
 
-`.github/actions/verify/action.yml` is the entry point for those checks, and
-`ci.yml` is the only workflow that runs it: a release stages and publishes, and the
-verification it rests on is a `ci.yml` dispatch for the same target.
+`.github/actions/verify/action.yml` is the entry point for those checks.
+`verify.yml` is the workflow around it, and the only place it is run: `ci.yml`
+calls that workflow rather than copying its steps, so there is one definition of
+staging and verifying a target.
 
 Those two workflows also cache the cargo registry and git checkouts under a key
 built from the lockfile, with a shared restore prefix. The first runs spent most of their
@@ -196,19 +197,30 @@ say which branch meant it. `--for-tag` refuses such a tag with that reason rathe
 than guessing.
 
 It has two jobs and runs no checks: `prepare` resolves the target, and `publish`
-stages it and publishes it. **Verification is `ci.yml`'s**, over the same branch
-and through the same `verify` action:
+stages it and publishes it. **Verification is `verify.yml`'s**, and `prepare`
+refuses a real publish without its receipt:
 
 ```sh
-gh workflow run ci.yml -f targets=bite_v1.21.0
+gh workflow run verify.yml -f target=bite_v1.21.0
 ```
 
-That split is deliberate. Verification takes minutes, and a release workflow that
-ran it could not be used to iterate on the publisher itself — a missing token, a
-rate limit, a crate whose manifest crates.io rejects — where those minutes are the
-thing being waited on and not what is being tested. The cost is that a release no
-longer proves it was verified: the environment's reviewers are the checkpoint, and
-the `ci.yml` run for the commit is what they read.
+A dispatched verification uploads `verified-<target>-<version>` — the stage report,
+which records the target, branch, commit and version it checked — and `prepare`
+asks the artifacts API for that name. So a release is checked against a
+verification of the same target at the same version, and since the version is the
+tag and staging refuses an untagged tip (§6), that is also the commit. A dry run
+is exempt — it publishes nothing, and iterating on the publisher is what it is for.
+
+**`require_verify`** is that check's off switch, default on. Turning it off
+publishes without a receipt and says so in a warning; it is for when the receipt
+itself is what is broken — the artifact has aged out, or the repository it lands
+in is misconfigured — not for skipping the checks, and not for a first release of
+a name.
+
+Verification is kept out of this workflow because it takes minutes, and a release
+workflow that ran it could not be used to iterate on the publisher itself — a
+missing token, a rate limit, a crate whose manifest crates.io rejects — where
+those minutes are the thing being waited on and not what is being tested.
 
 The remaining input serves the resume loop: **`only`** passes `--only` to
 `publish.py`, publishing just the named crates. The publish log names the crate a

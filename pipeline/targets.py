@@ -53,6 +53,7 @@ WORKFLOWS = ROOT / ".github" / "workflows"
 SELECTORS = {
     "tag.yml": ("branch", "branch"),
     "release.yml": ("target", "name"),
+    "verify.yml": ("target", "name"),
 }
 
 

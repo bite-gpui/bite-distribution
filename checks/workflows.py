@@ -151,8 +151,13 @@ def wiring_problems() -> list[str]:
     for path in files:
         document = yaml.safe_load(path.read_text())
         steps = list((document.get("runs") or {}).get("steps") or [])
-        for job in (document.get("jobs") or {}).values():
+        for name, job in (document.get("jobs") or {}).items():
             steps += list((job or {}).get("steps") or [])
+            # A job that calls another workflow here, rather than an action.
+            call = (job or {}).get("uses")
+            if isinstance(call, str) and call.startswith("./"):
+                if not (ROOT / call).is_file():
+                    problems.append(f"{path}: job `{name}` uses {call}, which is not a file")
 
         by_id = {s["id"]: s for s in steps if isinstance(s, dict) and s.get("id")}
         for step in steps:

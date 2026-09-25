@@ -17,18 +17,18 @@
 # releases never overlap. The token is a repository/Environment secret and never
 # reaches a pull request, because this workflow has no pull-request trigger.
 #
-# **Verification is not part of this workflow.** It stages and publishes; the
-# checks a staged tree has to pass belong to `ci.yml`, which runs the same
-# `verify` action over the same branch when it is dispatched for that target:
+# **Verification is not part of this workflow**, but a verification is required.
+# It stages and publishes; the checks a staged tree has to pass belong to
+# `verify.yml`, which leaves a receipt named `verified-<target>-<version>` when
+# it is dispatched. `prepare` refuses a real publish without one:
 #
-#     gh workflow run ci.yml -f targets=bite_v1.21.0
+#     gh workflow run verify.yml -f target=bite_v1.21.0
 #
-# Keeping the two apart is what makes this workflow good for iterating on the
-# publisher itself — a missing token, a rate limit, a crate whose manifest
-# crates.io rejects — where the minutes `verify` takes are the thing being waited
-# on and not what is being tested. The cost is that a release no longer proves it
-# was verified: the reviewers on the `crates-io` environment are the checkpoint,
-# and the `ci.yml` run for the commit is what they read.
+# Keeping the checks out of this workflow is what makes it good for iterating on
+# the publisher itself — a missing token, a rate limit, a crate whose manifest
+# crates.io rejects — where the minutes they take are the thing being waited on
+# and not what is being tested. `require_verify: false` publishes without the
+# receipt, for when the receipt itself is what is broken; it says so loudly.
 name: Release
 
 run-name: ${{ github.event.inputs.dry_run == 'false' && format('Release {0}', github.event.inputs.target) || format('Dry run {0}', github.event.inputs.target) }}
@@ -68,6 +68,11 @@ on:
         description: 'publish only these crates, comma-separated — the resume after one of them failed'
         required: false
         default: ''
+      require_verify:
+        description: 'refuse to publish without a verification receipt (uncheck to publish anyway)'
+        type: boolean
+        required: false
+        default: true
 
 # Stable and preview uploads share one crates.io namespace, and the release
 # targets share crate names, so two releases must never overlap.
@@ -84,6 +89,8 @@ env:
 
 permissions:
   contents: read
+  # Reading the verification receipt back: it is an artifact on this repository.
+  actions: read
 
 jobs:
   prepare:
@@ -124,6 +131,40 @@ jobs:
           TARGET: ${{ inputs.target }}
         run: |
           echo "confirm ($CONFIRM) does not match target ($TARGET)" >&2
+          exit 1
+
+      # The receipt `verify.yml` leaves when it is dispatched. Keyed by version
+      # because that is the same thing as the commit here: a release target's tip
+      # has to carry the tag its version names (§6), and staging refuses an
+      # untagged tip. The stage report inside it records the commit, so a reviewer
+      # can see which one was verified.
+      #
+      # A dry run is not gated: it publishes nothing, and iterating on the
+      # publisher is what a dry run is for — the minutes a verification takes are
+      # then the thing being waited on and not what is being tested.
+      - name: Require a verification of this target
+        if: inputs.dry_run == false
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REQUIRE: ${{ inputs.require_verify }}
+          TARGET: ${{ steps.resolve.outputs.target }}
+          VERSION: ${{ steps.resolve.outputs.version }}
+        run: |
+          # Compared as a shell string because it arrives either way: a dispatch
+          # boolean may be a boolean or a string.
+          if [ "$REQUIRE" != "true" ]; then
+            echo "::warning title=unverified release::$TARGET $VERSION will be published without a verification receipt"
+            exit 0
+          fi
+          receipt="verified-${TARGET}-${VERSION}"
+          found="$(gh api "repos/$GITHUB_REPOSITORY/actions/artifacts?name=$receipt" --jq '.total_count')"
+          if [ "$found" -gt 0 ]; then
+            echo "::notice title=verified::$receipt is on this repository"
+            exit 0
+          fi
+          echo "::error title=unverified::$TARGET $VERSION has no verification receipt ($receipt)." \
+               "Verify it first: gh workflow run verify.yml -f target=$TARGET" \
+               "Or re-dispatch with require_verify unchecked, deliberately."
           exit 1
 
       - name: Summarise

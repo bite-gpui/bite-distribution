@@ -1,0 +1,190 @@
+# Verify one target's staged tree, and — when dispatched — leave the receipt a
+# release reads.
+#
+# The checks themselves are the `verify` action; this workflow is the checkout,
+# toolchain, cache and staging around it, and it is the only definition of that
+# sequence. `ci.yml` calls it for the targets a pull request stages. Dispatch it
+# to verify a target on demand, which is also how a release is authorised:
+#
+#     gh workflow run verify.yml -f target=bite_v1.21.0
+#
+# A dispatched run uploads `verified-<target>-<version>`, and `release.yml`
+# refuses to publish a target at a version without one. The `receipt` input says
+# whether to leave it — on for a dispatch, off for a call. The condition is that
+# input rather than the event because the two are not the same thing: a dispatch
+# of `ci.yml` reaches this file as a `workflow_dispatch` too, and its matrix can
+# put one target on two runner labels, where two receipts of one name collide on
+# the artifact upload. A pull request's staging is not the act a release should
+# be reading either.
+name: Verify
+
+run-name: Verify ${{ inputs.target }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      # A `choice` list, not free text: it is the branches of the source repository,
+      # and `pipeline/targets.py --validate` fails if it and the table ever disagree.
+      target:
+        description: 'target to verify (a branch of bite-gpui/bite-gpui)'
+        type: choice
+        options:
+          - bite_v1.22.0-pre
+          - bite_v1.21.0
+          - bite_v1.21.0-pre
+          - bite_v1.20.2
+          - bite_v1.19.x
+          - bite_v1.18.x
+          - bite_v1.17.x
+          - bite_v1.16.x
+          - bite_v1.15.x
+          - bite_v1.14.x
+          - bite_master
+          - bite_ce_main
+        required: true
+      platforms:
+        description: 'runner label to verify on'
+        required: false
+        default: ubuntu-latest
+      receipt:
+        description: 'leave the receipt a release reads (verified-<target>-<version>)'
+        type: boolean
+        required: false
+        default: true
+  workflow_call:
+    inputs:
+      target:
+        description: 'target to verify'
+        required: true
+        type: string
+      platforms:
+        description: 'runner label to verify on'
+        required: false
+        type: string
+        default: ubuntu-latest
+      # A call is `ci.yml` staging what a pull request or push touches, which is
+      # not an act a release should be reading.
+      receipt:
+        description: 'leave the receipt a release reads'
+        required: false
+        type: boolean
+        default: false
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+  CARGO_INCREMENTAL: 0
+  # The branch sets `debug = "limited"`, and a debug build of the whole closure
+  # exhausted a runner's disk while linking. Nothing is debugged and every
+  # artifact is thrown away, so the debug information is off.
+  CARGO_PROFILE_DEV_DEBUG: '0'
+  CARGO_PROFILE_TEST_DEBUG: '0'
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: ${{ inputs.target }} on ${{ inputs.platforms }}
+    runs-on: ${{ inputs.platforms }}
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v5
+        with:
+          # pipeline/stage.py reads the manifests with tomllib, which is 3.11 and
+          # later; a runner's own python3 is too old for that on macOS.
+          python-version: '3.13'
+
+      - name: Resolve the target
+        id: resolve
+        env:
+          INPUT_TARGET: ${{ inputs.target }}
+        run: |
+          set -euo pipefail
+          python3 pipeline/targets.py --validate
+          # Emits target=, repository=, branch=, lineage=, upstream=,
+          # amendment= and version= for $GITHUB_OUTPUT.
+          python3 pipeline/targets.py --env "$INPUT_TARGET" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v5
+        with:
+          repository: ${{ steps.resolve.outputs.repository }}
+          ref: ${{ steps.resolve.outputs.branch }}
+          path: src
+          token: ${{ secrets.SOURCE_READ_TOKEN || github.token }}
+
+      # The published version is the version the branch tip is tagged with, so a
+      # depth-1 checkout is enough — but the tags still have to be fetched, and
+      # fetching only ours keeps it small.
+      - name: Fetch the release tags
+        working-directory: src
+        run: git fetch --force origin '+refs/tags/bite_*:refs/tags/bite_*'
+
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          # Pinned to the toolchain the branches were built and verified with.
+          # Floating stable is how a run failed on a lint that did not exist when
+          # the code was written; see rust-toolchain.toml.
+          toolchain: '1.95.0'
+          components: clippy
+
+      # Dependency downloads dominated the first few runs. Different targets have
+      # different lockfiles, so the *build* cache cannot be shared, but the crates
+      # they download overlap almost completely — so the registry and git caches
+      # are keyed only on the lockfile and shared through the fallback.
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+          key: cargo-${{ runner.os }}-${{ hashFiles('src/Cargo.lock') }}
+          restore-keys: cargo-${{ runner.os }}-
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src -> target
+          key: ${{ inputs.target }}-${{ inputs.platforms }}
+
+      - name: Stage
+        env:
+          TARGET: ${{ inputs.target }}
+        run: python3 pipeline/stage.py --target "$TARGET" --source src
+
+      - uses: ./.github/actions/verify
+        with:
+          stage: src
+
+      - name: Record what was verified
+        id: receipt
+        env:
+          TARGET: ${{ inputs.target }}
+        run: |
+          set -euo pipefail
+          version="$(python3 -c "import json;print(json.load(open('src/dist-stage.json'))['version'])")"
+          sha="$(git -C src rev-parse HEAD)"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "::notice title=verified::$TARGET as $version at ${sha:0:10} passed the checks"
+
+      - name: Keep the stage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage-${{ inputs.target }}-${{ inputs.platforms }}
+          path: src/dist-stage.json
+          if-no-files-found: ignore
+
+      # The receipt a release reads, and it is the stage report: that already
+      # records the target, branch, commit and version, so it is the audit trail
+      # as well as the key.
+      #
+      # Keyed by version rather than by commit because here those are the same
+      # thing: a release target's tip has to carry the tag its version names
+      # (§6), and staging refuses an untagged tip.
+      - name: Leave the verification receipt
+        if: ${{ inputs.receipt }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: verified-${{ inputs.target }}-${{ steps.receipt.outputs.version }}
+          path: src/dist-stage.json

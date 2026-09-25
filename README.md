@@ -42,8 +42,8 @@ checks/          what a staged tree must pass, plus one check on the repository
   test_isolated.py     each tarball compiles with no siblings, as crates.io sees it
   workflows.py         the CI wiring: actionlint over the workflows, and a pass over
                        the actions' own inputs and outputs
-.github/         ci.yml, tag.yml, release.yml, actions/verify/ (over linux-deps,
-                 preflight, code-checks and build-checks)
+.github/         ci.yml, verify.yml, tag.yml, release.yml, actions/verify/ (over
+                 linux-deps, preflight, code-checks and build-checks)
 targets.toml     the twelve target branches, the table the pipeline reads
 docs/            the design by chapter: contract (§3–§6), staging (§7–§9),
                  verification (§10), release (§11–§12), decisions (§13)
@@ -132,8 +132,15 @@ the zed clone, which is why these run from its root rather than from `.dist/`.
 
 ## Releasing
 
-The version is the version the branch tip is **tagged** with, so a release is a
-tag. The `Tag` workflow creates it and starts the publish:
+Two dispatches, because verification takes minutes and publishing must not wait
+for it. Verify the target first, which leaves the receipt a release reads:
+
+```sh
+gh workflow run verify.yml -f target=bite_v1.21.0
+```
+
+Then release. The version is the version the branch tip is **tagged** with, so a
+release is a tag. The `Tag` workflow creates it and starts the publish:
 
 ```sh
 gh workflow run tag.yml -f branch=bite_v1.21.0                     # report: which tag, does it exist
@@ -177,6 +184,13 @@ gh workflow run release.yml -f target=bite_ce_main -f confirm=bite_ce_main -f dr
 gh workflow run release.yml -f target=bite_v1.21.0 -f dry_run=true
 ```
 
+`release.yml` refuses a real publish without the receipt for that target and
+version, and names the `verify.yml` command to produce it; a dry run is exempt,
+because it publishes nothing. **`require_verify`** turns that check off and
+publishes with a warning: it is for when the receipt itself is what is broken —
+it has aged out, or the repository it lands in is misconfigured — not for
+skipping the checks, and not for a first release of a name.
+
 **Configure the `crates-io` environment with required reviewers.** It is the
 approval gate and the only place the registry token is reachable, and it is the
 last thing between a tagged release and crates.io.
@@ -196,9 +210,13 @@ whole of it; `pipeline/targets.py --for-tag` is the lookup it would need.
   actionlint over the workflow files and checks the wiring actionlint cannot see,
   the call sites inside the composite actions. It runs before `plan`, so a wiring
   mistake fails in seconds instead of after the matrix has staged a target.
-- `.github/actions/verify/action.yml` — the entry point, shared by the release
-  workflows so they run the same checks as a pull request by construction. It runs
-  four phase actions, cheapest first: `linux-deps` (the system packages a Linux leg
+- `.github/workflows/verify.yml` — stage one target and run the checks over it.
+  The only definition of that sequence: `ci.yml` calls it for the targets a pull
+  request stages, and dispatching it directly is how a target is verified before a
+  release. A dispatched run also uploads `verified-<target>-<version>`, the receipt
+  `release.yml` reads.
+- `.github/actions/verify/action.yml` — the four phase actions `verify.yml` runs,
+  cheapest first: `linux-deps` (the system packages a Linux leg
   links against), `preflight` (the stage report, `cargo metadata`, and the two
   static packaging checks — `checks/check_reads.py` and the Apple check,
   `checks/apple_build_check.py`, where the lineage has one), `code-checks` (clippy
@@ -209,9 +227,10 @@ whole of it; `pipeline/targets.py --for-tag` is the lookup it would need.
   and dispatches `release.yml`.
 - `.github/workflows/release.yml` — dispatch only, because the tags it would want
   to trigger on live in the source repository. It takes the target, a confirmation
-  that must repeat it for a real publish, and `dry_run` (default true). Only its
-  publish job names the `crates-io` environment, so `CARGO_REGISTRY_TOKEN` reaches
-  exactly one step of one job behind an approval.
+  that must repeat it for a real publish, and `dry_run` (default true). It refuses
+  a real publish without a verification receipt unless `require_verify` is turned
+  off. Only its publish job names the `crates-io` environment, so
+  `CARGO_REGISTRY_TOKEN` reaches exactly one step of one job behind an approval.
 
 One environment and three secrets. The environment is `crates-io`, holding
 `CARGO_REGISTRY_TOKEN` for a real publish and (recommended) required reviewers.
