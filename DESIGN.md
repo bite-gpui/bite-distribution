@@ -1,11 +1,15 @@
 # bite-gpui distribution — design
 
-Status: design for review. Nothing here is published yet; no crate name or
-version has been claimed on crates.io.
+Status: **as built, 2026-09-25.** The zed lineage is published — all thirty-one
+of its names are on crates.io at `1.20.203` — and `bite_v1.21.0` is staged and
+clean but not yet released (§11). Where a section still says "will", "should" or
+"recommended", it records something not yet done; §13 records each decision and
+its status. Numbers marked *verified* were checked against `targets.toml`, a
+staged tree or crates.io on that date.
 
 ## 1. What this publishes, and why
 
-The rearchitected gpui exists as nine branches in two repositories. That is
+The rearchitected gpui exists as twelve branches in one repository. That is
 useful to us and useless to anyone else: you cannot `cargo add` a branch, and
 you cannot pin one meaningfully. This project turns each branch into a set of
 installable crates, so that
@@ -55,25 +59,29 @@ alternative we rejected and why.
 
 ## 3. Inputs and provenance
 
-Ten targets, one per branch. `.dist/targets.toml` is the source of truth and
+Twelve targets, one per branch. `.dist/targets.toml` is the source of truth and
 `.dist/pipeline/naming.py --verify` checks it against the manifests.
 
-| target | lineage | publishes as | upstream | tag | publishes |
-| --- | --- | --- | --- | --- | --- |
-| `bite_v1.14.x` | zed | `bite-gp-*` | `1.14.2` | `bite_1.14.200` | `1.14.200` |
-| `bite_v1.15.x` | zed | `bite-gp-*` | `1.15.1` | `bite_1.15.100` | `1.15.100` |
-| `bite_v1.16.x` | zed | `bite-gp-*` | `1.16.3` | `bite_1.16.300` | `1.16.300` |
-| `bite_v1.17.x` | zed | `bite-gp-*` | `1.17.2` | `bite_1.17.200` | `1.17.200` |
-| `bite_v1.18.x` | zed | `bite-gp-*` | `1.18.1` | `bite_1.18.100` | `1.18.100` |
-| `bite_v1.19.x` | zed | `bite-gp-*` | `1.19.2` | `bite_1.19.200` | `1.19.200` |
-| `bite_v1.20.2` | zed | `bite-gp-*` | `1.20.2` | `bite_1.20.200` | `1.20.200` |
-| `bite_v1.21.0-pre` | zed | `bite-gp-*` | `1.21.0-pre` | `bite_1.21.0-pre` | `1.21.0-pre` |
-| `bite_master` | zed | `bite-gp-*` | — | — | CalVer |
-| `bite_ce_main` | ce | `bite-gp-ce-*`, `bite-gpui-ce` | — | — | CalVer |
+| target | lineage | publishes as | upstream |
+| --- | --- | --- | --- |
+| `bite_v1.14.x` | zed | `bite-gp-*` | `1.14.2` |
+| `bite_v1.15.x` | zed | `bite-gp-*` | `1.15.1` |
+| `bite_v1.16.x` | zed | `bite-gp-*` | `1.16.3` |
+| `bite_v1.17.x` | zed | `bite-gp-*` | `1.17.2` |
+| `bite_v1.18.x` | zed | `bite-gp-*` | `1.18.1` |
+| `bite_v1.19.x` | zed | `bite-gp-*` | `1.19.2` |
+| `bite_v1.20.2` | zed | `bite-gp-*` | `1.20.2` |
+| `bite_v1.21.0-pre` | zed | `bite-gp-*` | `1.21.0-pre` |
+| `bite_v1.21.0` | zed | `bite-gp-*` | `1.21.0` |
+| `bite_v1.22.0-pre` | zed | `bite-gp-*` | `1.22.0-pre` |
+| `bite_master` | zed | `bite-gp-*` | — (rolling) |
+| `bite_ce_main` | ce | `bite-gp-ce-*`, `bite-gpui-ce` | — (rolling) |
 
-`upstream` is the zed release a branch retargets, recorded for provenance; the
-released version is derived from it and declared by the branch's tag (§6).
-`pipeline/targets.py --tags` prints the tag each selected target must carry.
+`upstream` is the zed release a branch retargets, recorded for provenance. The
+published version follows from it and from the target's `amendment` (§6), so
+neither is repeated here: `pipeline/targets.py --tags` prints the current tag and
+version for every target, and that command — not this table — is what a release
+reads. *(Verified 2026-09-25 against `targets.toml`.)*
 
 All twelve live in one repository, `git@github.com:bite-gpui/bite-gpui.git`. They share
 a common ancestor — ce is a fork of zed, not a separate lineage — but they have
@@ -121,7 +129,7 @@ Measured closures (normal + build reachability):
 
 | target | crates | notes |
 | --- | --- | --- |
-| `bite_v1.14.x` | 31 | largest: also carries `media`, `sum_tree`, `zlog` |
+| `bite_v1.14.x` | 31 | the release line's set, which the other nine share: `media`, `sum_tree`, `zlog` included |
 | `bite_master` | 30 | 1.14 minus `media` |
 | `bite_ce_main` | 26 | ce's own `gpui_ce_*` set replaces the vendored zed crates |
 
@@ -162,11 +170,13 @@ its full spelling. `--verify` re-derives this on every run rather than trusting
 the comment.
 
 Verified: 57 distinct (lineage, package) pairs → 57 names, no collisions, and no
-name claimed by two lineages. `bite-gpui` and `bite-gpui-ce` are both unclaimed
-on crates.io, but `gpui` itself is not — it is owned by upstream zed and has
-been published seven times. That is the strongest argument for the prefix: the
-name we are reimplementing is already taken, by the people we are
-reimplementing.
+name claimed by two lineages. `bite-gpui` was unclaimed when this was written and
+is now taken by our own first release; `bite-gpui-ce` is still unclaimed. `gpui`
+itself is neither — it is owned by upstream zed and has been published seven
+times. That is the strongest argument for the prefix: the name we are
+reimplementing is already taken, by the people we are reimplementing.
+*(Verified 2026-09-25: `gpui` has exactly seven versions — three yanked — and its
+owners are `zed-industries`; `bite-gpui` is at `1.20.203`; `bite-gpui-ce` 404s.)*
 
 One consequence of preserving lib names: both facades export lib `gpui`, so a
 project depends on `bite-gpui` or `bite-gpui-ce`, never both. That is inherent —
@@ -189,9 +199,12 @@ version:
 
 | branch | tag | publishes |
 | --- | --- | --- |
-| `bite_v1.14.x` | `bite_1.14.200` | `1.14.200` |
-| `bite_v1.20.2` | `bite_1.20.200` | `1.20.200` |
-| `bite_v1.21.0-pre` | `bite_1.21.0-pre` | `1.21.0-pre` |
+| `bite_v1.14.x` | `bite_1.14.202` | `1.14.202` |
+| `bite_v1.20.2` | `bite_1.20.203` | `1.20.203` |
+| `bite_v1.21.0-pre` | `bite_1.21.0-pre.2` | `1.21.0-pre.2` |
+
+Three of the twelve, to show the shape; `pipeline/targets.py --tags` prints all of
+them and is what a release reads. *(Verified 2026-09-25 against `targets.toml`.)*
 
 This replaced an earlier design that derived the version from the upstream
 `v1.20.2` tag's presence on the branch's ancestry. That failed in CI for a real
@@ -202,7 +215,7 @@ fork on every job. A tag **at the tip** needs no history at all — `git tag
 --points-at HEAD` compares OIDs — so a depth-1 checkout suffices and the
 workflow fetches only `refs/tags/bite_*`.
 
-Three consequences, all deliberate:
+Four consequences, all deliberate:
 
 - **A release target must be tagged to be staged.** The failure names the
   command to run: `git tag -a bite_1.20.201 -m bite_1.20.201`. Pushing a commit
@@ -315,11 +328,16 @@ Staged against `bite_v1.21.0-pre`, that is nine rewrites: `proptest` and `scap`
 in the workspace table, `font-kit` in three manifests, `wasm_thread` in two,
 `xim` in one, `async-tar` in one.
 
+The `source` column is the git URL the branch points at, which is not always the
+crate's own home: `async-tar`'s URL is `zed-industries/async-tar`, but what it
+publishes is upstream's `async-tar`, and the substitute above is the registry
+release of it.
+
 The first three are zed's own forks published under `-zed` prereleases, so the
 substitution is faithful. `calloop`, `wasm_thread`, `async-tar` and `proptest`
-are upstream crates zed takes from a rev, so the substitution changes bytes and
-wants a diff check before the first publish of each. `proptest` is only reached
-through test features.
+are upstream crates taken from a rev, so the substitution changes bytes and wants
+a diff check before the first publish of each. `proptest` is only reached through
+test features.
 
 **A `[patch]` is not a substitution.** `calloop` reaches `gpui_linux` through
 `[patch.crates-io]`, so the manifest already names a registry version and needs
@@ -431,8 +449,9 @@ name and add their own directory to `sys.path`.
 **Clippy is the compile.** `cargo clippy --all-targets --all-features -- -D
 warnings` type-checks the same targets a plain `cargo check` would and adds the
 lints on top, and because clippy runs under a compiler wrapper that
-re-fingerprints the workspace, a check step ahead of it recompiled all 31 crates
-for nothing. There is one step, and the lints are the reason it is worth having.
+re-fingerprints the workspace, a check step ahead of it recompiled every crate in
+the closure for nothing. There is one step, and the lints are the reason it is
+worth having.
 
 **`--all-features` throughout.** The migration project checked the closure with
 default features and with all of them, and only the latter compiles the code
@@ -643,7 +662,7 @@ forever. That also corrects how §10 talks about them: they were never merely
 "unverifiable", they were **unpublishable**, and what makes them publishable is a
 reservation rather than an edit.
 
-**Branch order is free, but the newest branch should still go first.** The eight
+**Branch order is free, but the newest branch should still go first.** The ten
 release targets publish the same names at different versions (`1.14.202`,
 `1.15.102`, …), and crates.io accepts a version below the current maximum — that
 is how a patch to an old major line ships. Nothing breaks if an older branch
@@ -690,8 +709,8 @@ reservation of a name that must exist before anything may name it.
 - **plan** turns the selector into a matrix via `pipeline/targets.py`;
 - **stage** (matrix) checks the target branch out, stages it, and runs verification.
   A pull request stages one target per lineage (`default`); dispatch with `all`
-  when a change could affect every branch. Ten cold builds of gpui on every push
-  is hours of CI for a change to a script. The matrix carries a runner label per
+  when a change could affect every branch. Staging all twelve on every push is
+  hours of CI for a change to a script. The matrix carries a runner label per
   leg, so `platforms` can add a `macos-14` leg to every selected target — the
   only way the Apple backends' build script is ever compiled, since it is behind
   `cfg(target_os = "macos")` and a Linux runner never sees it. It defaults to
@@ -766,7 +785,9 @@ release ends up half done. It does keep the publish log as an artifact, which is
 what names the crate a rate limit stopped the run at and when the next attempt is
 allowed.
 
-## 13. Open decisions
+## 13. Decisions
+
+Each heading carries its own status: decided, in force, or open.
 
 ### 13.1 Where the project lives — **decided: `bite-gpui/distribution`**
 `.dist/` is ignored in the zed clone (like `.tools/`). It lives at
@@ -805,26 +826,47 @@ ce's `release.yml` and `prerelease.yml` and this workflow would be publishing
 into one namespace, and would need the `registry-publish` concurrency group and
 one owner per name.
 
-### 13.3 What `bite_master` publishes as
-Recommended: the CalVer rolling series, so a release requirement never resolves
-to a master snapshot. The alternative is a prerelease of the forthcoming release
-(`1.22.0-master.YYYYMMDD`), which makes master sort newest but invents a release
-number that upstream may never use. If `bite_master` should simply not be
-published, that is also a clean answer — say so and it comes out of
-`targets.toml`.
+### 13.3 What `bite_master` publishes as — **in force: the CalVer series**
+The CalVer rolling series, so a release requirement never resolves to a master
+snapshot; that is what `targets.toml` declares today. The alternative is a
+prerelease of the forthcoming release (`1.22.0-master.YYYYMMDD`), which makes
+master sort newest but invents a release number that upstream may never use. If
+`bite_master` should simply not be published, that is also a clean answer — say
+so and it comes out of `targets.toml`.
 
-### 13.4 The GPL crates
+### 13.4 The GPL crates — **decided by shipping: published GPL-labelled**
 `path`, `zlog`, `ztracing`, `ztracing_macro` are GPL-3.0-or-later and are in
-`gpui`'s dependency graph. Publish them GPL-labelled (recommended; it is what
-zed does, and GPL-3.0 is Apache-compatible), or eliminate the dependency so the
-published graph stays Apache-only? This is the only decision here with legal
-weight.
+`gpui`'s dependency graph. The choice was to publish them GPL-labelled — it is
+what zed does, and GPL-3.0 is Apache-compatible — or to eliminate the dependency
+so the published graph stays Apache-only.
 
-### 13.5 Crate metadata and ownership
+**The first release took the first option, so this is no longer open.** All four
+are on crates.io at `1.20.203` with their licence text and origin recorded as §9
+describes, and `gpui` depends on two of them, so the published zed lineage is GPL
+at those nodes. Reversing it now means yanking four names and republishing the
+facade without the dependency. The legal weight has not gone away, it has moved:
+what is still open is telling consumers, which is the per-file headers and the
+copyleft audit as a check rather than a measurement, both noted in §9.
+
+*(Verified 2026-09-25: `bite-gp-path`, `bite-gp-zlog`, `bite-gp-ztracing` and
+`bite-gp-ztracing-macro` are all published at `1.20.203`.)*
+
+### 13.5 Crate metadata and ownership — **partly done**
 The crates need `description`, `keywords`, `categories`, `homepage`, and a
 `repository`. In the 1.14 closure, 18 of 31 have no description, 29 have no
 per-crate README (only `gpui` does), most set no `repository` at all and 3 still
-point at `zed-industries/zed`. Recommended: point `repository` at the bite-gpui
-repository and state the upstream origin in `description` (e.g. "… — zed's
-GPU-accelerated UI framework, rearchitected; built from zed v1.20.2"). A
-crates.io owner account and token are also needed before the first publish.
+point at `zed-industries/zed`.
+
+Done by staging: `pipeline/stage.py` writes `repository` as the bite-gpui URL on
+every crate, and fills a description only where the source had none, generically
+("`<package>` — part of the bite-gpui rearchitecture of zed's gpui"). The owner
+account and token exist; the first release used them.
+
+Not done: a description that names the upstream origin. Because the rule is
+"fill only if empty", the facade still reads *"Zed's GPU-accelerated UI
+framework"* with nothing to say it is a build of zed v1.20.2; nor are
+`keywords`/`categories`/`homepage` ours rather than the source's (`homepage` is
+`https://gpui.rs`), nor are there per-crate READMEs.
+
+*(Verified 2026-09-25 against the published `bite-gpui` 1.20.203 and
+`pipeline/stage.py`.)*

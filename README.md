@@ -234,9 +234,11 @@ stage tree, which is how the first release was done.
 
 Both lineages stage from a realistic CI checkout. `bite_v1.20.2` was cloned at
 `--depth 1` with tags fetched the way the workflow does, staged to 31 crates at
-`1.20.200` (39 dependency rewrites, 9 git substitutions, 5 licences copied),
-splitting into 30 native, 1 wasm-only and 24 with tests; `bite_ce_main` staged to
-26 crates, 35 rewrites, reporting 4 withheld rather than failing.
+`1.20.200` — since amended to `1.20.203` by the hand release (§6) — with 39
+dependency rewrites, 9 git substitutions and 5 licences copied, splitting into 30
+native, 1 wasm-only and 24 with tests; `bite_ce_main` staged to 26 crates, 35
+rewrites, reporting nine withheld rather than failing (four blocked by `wgsl-rs`,
+five more by depending on them — DESIGN §8).
 
 Also verified: `cargo metadata` resolves the whole staged workspace for both
 lineages — 775 packages for ce, including the crates outside its closure that
