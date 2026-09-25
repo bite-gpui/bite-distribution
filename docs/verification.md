@@ -9,10 +9,11 @@ what each check exists to catch.
 
 ## 10. Verification
 
-Run by `.github/actions/verify/action.yml` against the staged checkout, per
-target, before anything is published. It is one entry point over four actions,
-so that "the release workflow runs the same checks as a pull request" holds by
-construction rather than by review — and so a phase can also be run on its own:
+Run by `ci.yml` against the staged checkout, per target: dispatch it for a target
+and this is what runs over that branch's staged tree. `release.yml` deliberately
+does not — it stages and publishes — so a release rests on a `ci.yml` run for the
+same commit. It is one entry point over four actions, so there is one copy of the
+sequence rather than one per workflow, and a phase can also be run on its own:
 
 | action | what it is | cost |
 | --- | --- | --- |

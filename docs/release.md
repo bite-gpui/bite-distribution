@@ -137,9 +137,9 @@ reservation of a name that must exist before anything may name it.
   Linux alone, and the labels are declared once, in `pipeline/targets.py --matrix`, rather
   than in the workflow.
 
-`.github/actions/verify/action.yml` is the entry point, shared by the workflows that
-build, so "the release workflow runs the same checks as a pull request" holds by
-construction rather than by review.
+`.github/actions/verify/action.yml` is the entry point for those checks, and
+`ci.yml` is the only workflow that runs it: a release stages and publishes, and the
+verification it rests on is a `ci.yml` dispatch for the same target.
 
 Those two workflows also cache the cargo registry and git checkouts under a key
 built from the lockfile, with a shared restore prefix. The first runs spent most of their
@@ -195,28 +195,32 @@ series, so both lineages could push a tag of the same name and the tag would not
 say which branch meant it. `--for-tag` refuses such a tag with that reason rather
 than guessing.
 
-Two further inputs exist for iterating on the publisher rather than on the
-crates, where the minutes `verify` takes are the thing being waited on and not
-what is being tested:
+It has two jobs and runs no checks: `prepare` resolves the target, and `publish`
+stages it and publishes it. **Verification is `ci.yml`'s**, over the same branch
+and through the same `verify` action:
 
-- **`skip_verify`** publishes a staged tree without running the verification
-  suite. It is off by default; refused together with a dry run, where verifying
-  *is* the work; still behind the confirmation input and the environment's
-  reviewers; and named in the run's title, so an unverified release is
-  identifiable in the run list rather than only in a log. It is for testing a
-  token, a rate limit, or a crate whose manifest crates.io rejects — not for a
-  release, and least of all for the first release of a name.
-- **`only`** passes `--only` to `publish.py`, publishing just the named crates.
-  That is the resume after one crate failed: the publish log names it, and this
-  republishes it without replaying the ones that already landed. It cannot
-  smuggle out a partial release, because the withheld refusal is computed over
-  the whole release before the selection is applied.
+```sh
+gh workflow run ci.yml -f targets=bite_v1.21.0
+```
 
-The publish job's condition names what it requires instead of relying on `needs`:
-a job that has an `if` runs after a failed dependency unless the condition itself
-says otherwise, so `publish` requires `prepare` to have succeeded and `verify` to
-have either succeeded or been deliberately skipped. Publishing after a failed
-verification is the one outcome the workflow has to make impossible.
+That split is deliberate. Verification takes minutes, and a release workflow that
+ran it could not be used to iterate on the publisher itself — a missing token, a
+rate limit, a crate whose manifest crates.io rejects — where those minutes are the
+thing being waited on and not what is being tested. The cost is that a release no
+longer proves it was verified: the environment's reviewers are the checkpoint, and
+the `ci.yml` run for the commit is what they read.
+
+The remaining input serves the resume loop: **`only`** passes `--only` to
+`publish.py`, publishing just the named crates. The publish log names the crate a
+failure stopped at, and this republishes it without replaying the ones that
+already landed. It cannot smuggle out a partial release, because the withheld
+refusal is computed over the whole release before the selection is applied.
+
+`publish` is gated by `needs.prepare.result == 'success' && dry_run == 'false'`.
+`needs` alone would already skip it when `prepare` fails; the result is named
+because a failed job does not reliably expose the outputs its earlier steps wrote.
+A note from the design this replaced: a job cannot escape a failed or skipped
+dependency with a plain condition, only with `always()`.
 
 The publish job runs behind the `crates-io` environment — required reviewers and
 the token belong there, and it is the only place a dispatch can turn into an
@@ -224,8 +228,8 @@ upload — under a single `registry-publish` concurrency group, because the rele
 targets share crate names and crates.io versions are immutable. Because only a
 job that names the environment can see the secret, the token is checked as that
 job's first step after checkout: failing there costs seconds, where letting
-`publish.py` find it empty costs a staging run first. It does not re-run full
-verification — that passed on the same commit, or was skipped deliberately — and
-holding the registry lock through a test suite is how a release ends up half
-done. It does keep the publish log as an artifact, which is what names the crate
-a rate limit stopped the run at and when the next attempt is allowed.
+`publish.py` find it empty costs a staging run first. It runs no checks — those
+belong to `ci.yml`, and holding the registry lock through a test suite is how a
+release ends up half done. It does keep the publish log as an artifact, which is
+what names the crate a rate limit stopped the run at and when the next attempt is
+allowed.

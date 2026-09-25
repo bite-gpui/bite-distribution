@@ -1,9 +1,14 @@
 # Everything a target must pass before any of its crates is published.
 #
-# One entry point, so that "the release workflow runs the same checks as a pull
-# request" holds by construction rather than by review. The phases are separate
-# actions so they can also be run on their own; here they run cheapest first, so
-# the failures that cost seconds are reported before the ones that cost minutes.
+# Run by `ci.yml`, which is where verification happens: dispatch it for a target
+# and this runs over that branch's staged tree. `release.yml` does not run it — it
+# stages and publishes — so the check a release rests on is a `ci.yml` run for the
+# same commit, which is what the `crates-io` environment's reviewers read.
+#
+# One entry point rather than a sequence copied into each workflow. The phases are
+# separate actions so they can also be run on their own; here they run cheapest
+# first, so the failures that cost seconds are reported before the ones that cost
+# minutes.
 #
 # The target repo is expected to be checked out, tagged and staged before this runs.
 name: Verify a staged target

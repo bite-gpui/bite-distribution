@@ -5,6 +5,10 @@
 # and its backends, so twelve of them on every push is hours of CI for a change to
 # a script. `default` is one target per lineage; dispatch with `all` when the
 # change is one that could affect every branch.
+#
+# This is also the only place a release target is verified: `release.yml` stages
+# and publishes and runs no checks, so a release rests on a dispatch of this
+# workflow for the same target (`-f targets=bite_v1.21.0`).
 name: CI
 
 on:

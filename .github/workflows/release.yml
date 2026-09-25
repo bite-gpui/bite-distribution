@@ -17,16 +17,21 @@
 # releases never overlap. The token is a repository/Environment secret and never
 # reaches a pull request, because this workflow has no pull-request trigger.
 #
-# `skip_verify` opens a third way in, deliberately: it publishes a staged tree
-# without running the verification suite, for iterating on the publisher itself —
-# a missing token, a rate limit, a crate whose manifest crates.io rejects — where
-# the minutes `verify` takes are the thing being waited on and not what is being
-# tested. It is off by default, refused on a dry run (where verification *is* the
-# work), still fenced by the confirmation input and the environment's reviewers,
-# and named in the run's title so an unverified release is obvious in the list.
+# **Verification is not part of this workflow.** It stages and publishes; the
+# checks a staged tree has to pass belong to `ci.yml`, which runs the same
+# `verify` action over the same branch when it is dispatched for that target:
+#
+#     gh workflow run ci.yml -f targets=bite_v1.21.0
+#
+# Keeping the two apart is what makes this workflow good for iterating on the
+# publisher itself — a missing token, a rate limit, a crate whose manifest
+# crates.io rejects — where the minutes `verify` takes are the thing being waited
+# on and not what is being tested. The cost is that a release no longer proves it
+# was verified: the reviewers on the `crates-io` environment are the checkpoint,
+# and the `ci.yml` run for the commit is what they read.
 name: Release
 
-run-name: ${{ github.event.inputs.skip_verify == 'true' && format('Release {0} — UNVERIFIED', github.event.inputs.target) || format('Release {0}', github.event.inputs.target) }}
+run-name: ${{ github.event.inputs.dry_run == 'false' && format('Release {0}', github.event.inputs.target) || format('Dry run {0}', github.event.inputs.target) }}
 
 on:
   workflow_dispatch:
@@ -55,15 +60,10 @@ on:
         required: false
         default: ''
       dry_run:
-        description: 'package and verify without uploading'
+        description: 'stage and package without uploading'
         type: boolean
         required: false
         default: true
-      skip_verify:
-        description: 'publish without verification — for iterating on crates.io itself, not for a release'
-        type: boolean
-        required: false
-        default: false
       only:
         description: 'publish only these crates, comma-separated — the resume after one of them failed'
         required: false
@@ -95,9 +95,8 @@ jobs:
       branch: ${{ steps.resolve.outputs.branch }}
       version: ${{ steps.resolve.outputs.version }}
       dry_run: ${{ inputs.dry_run }}
-      # Passed through as outputs rather than read from `inputs` in the jobs that
-      # need them: an output is unambiguously available at job level.
-      skip_verify: ${{ inputs.skip_verify }}
+      # An output is unambiguously available at job level, where the `inputs`
+      # context is not, so the inputs the publish job needs are passed through.
       only: ${{ inputs.only }}
     steps:
       - uses: actions/checkout@v5
@@ -127,32 +126,6 @@ jobs:
           echo "confirm ($CONFIRM) does not match target ($TARGET)" >&2
           exit 1
 
-      - name: Refuse to skip verification on a dry run
-        env:
-          SKIP: ${{ inputs.skip_verify }}
-          DRY: ${{ inputs.dry_run }}
-        run: |
-          # Compared as shell strings, as the summary below does: whether a
-          # dispatch boolean arrives as a boolean or as a string, interpolating
-          # it here yields "true" or "false" either way.
-          if [ "$SKIP" = "true" ] && [ "$DRY" = "true" ]; then
-            echo "skip_verify is for a real publish. On a dry run verification is the" >&2
-            echo "whole work, so the two together are refused rather than quietly doing" >&2
-            echo "only one of them." >&2
-            exit 1
-          fi
-
-      - name: Say so when verification is skipped
-        env:
-          SKIP: ${{ inputs.skip_verify }}
-          DRY: ${{ inputs.dry_run }}
-          TARGET: ${{ steps.resolve.outputs.target }}
-          VERSION: ${{ steps.resolve.outputs.version }}
-        run: |
-          if [ "$SKIP" = "true" ] && [ "$DRY" != "true" ]; then
-            echo "::warning title=unverified release::$TARGET $VERSION will be published without verification"
-          fi
-
       - name: Summarise
         env:
           MODE: ${{ inputs.dry_run }}
@@ -160,92 +133,24 @@ jobs:
           VERSION: ${{ steps.resolve.outputs.version }}
           ONLY: ${{ inputs.only }}
         run: |
+          # Compared as a shell string because it arrives either way: a dispatch
+          # boolean may be a boolean or a string, and interpolating gives
+          # "true"/"false" here regardless.
           if [ "$MODE" = "false" ]; then
             echo "::notice title=release::$TARGET $VERSION will be published to crates.io"
           else
-            echo "::notice title=dry run::$TARGET $VERSION will be staged and verified, not uploaded"
+            echo "::notice title=dry run::$TARGET $VERSION will be staged and packaged, not uploaded"
           fi
           if [ -n "$ONLY" ]; then
             echo "::notice title=partial release::only $ONLY will be published"
           fi
 
-  verify:
-    needs: prepare
-    # Stated rather than left to `needs` alone: a job that has a condition runs
-    # after a failed dependency unless the condition itself says otherwise.
-    if: ${{ needs.prepare.result == 'success' && needs.prepare.outputs.skip_verify == 'false' }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 75
-    outputs:
-      version: ${{ steps.version.outputs.version }}
-    steps:
-      - uses: actions/checkout@v5
-      - uses: actions/checkout@v5
-        with:
-          repository: ${{ needs.prepare.outputs.repository }}
-          ref: ${{ needs.prepare.outputs.branch }}
-          path: src
-          token: ${{ secrets.SOURCE_READ_TOKEN || github.token }}
-
-      # The published version is the version the branch tip is tagged with.
-      - name: Fetch the release tags
-        working-directory: src
-        run: git fetch --force origin '+refs/tags/bite_*:refs/tags/bite_*'
-
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
-        with:
-          # Pinned to the toolchain the branches were built and verified with;
-          # see rust-toolchain.toml.
-          toolchain: '1.95.0'
-          components: clippy
-
-      # See ci.yml: the registry and git caches are shared across targets
-      # because their lockfiles differ but their dependencies do not.
-      - uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry/index
-            ~/.cargo/registry/cache
-            ~/.cargo/git/db
-          key: cargo-${{ runner.os }}-${{ hashFiles('src/Cargo.lock') }}
-          restore-keys: cargo-${{ runner.os }}-
-
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: src -> target
-          key: ${{ needs.prepare.outputs.target }}
-
-      - name: Stage
-        env:
-          TARGET: ${{ needs.prepare.outputs.target }}
-        run: python3 pipeline/stage.py --target "$TARGET" --source src
-
-      - name: Record the version being released
-        id: version
-        env:
-          TARGET: ${{ needs.prepare.outputs.target }}
-        run: |
-          version="$(python3 -c "import json;print(json.load(open('src/dist-stage.json'))['version'])")"
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-          echo "::notice title=$TARGET::staged $TARGET as $version"
-
-      - uses: ./.github/actions/verify
-        with:
-          stage: src
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: stage-${{ needs.prepare.outputs.target }}
-          path: src/dist-stage.json
-
   publish:
-    needs: [prepare, verify]
-    # A dispatch publishes when it asked to *and* has a verification behind it —
-    # one that passed, or one it deliberately skipped. The condition is explicit
-    # because a job that has one is not stopped by a failed dependency the way a
-    # job without one is, and publishing after a failed verification is the one
-    # outcome that has to be impossible.
-    if: ${{ needs.prepare.result == 'success' && needs.prepare.outputs.dry_run == 'false' && (needs.verify.result == 'success' || needs.verify.result == 'skipped') }}
+    needs: prepare
+    # A dispatch publishes only when it asked to. `needs` already skips this job
+    # when `prepare` fails; its result is named as well because a failed job does
+    # not reliably expose the outputs its earlier steps wrote.
+    if: ${{ needs.prepare.result == 'success' && needs.prepare.outputs.dry_run == 'false' }}
     runs-on: ubuntu-latest
     # Approval gate, and where CARGO_REGISTRY_TOKEN lives. Configure the
     # environment with required reviewers: it is the last thing between a dispatch
@@ -265,6 +170,7 @@ jobs:
           path: src
           token: ${{ secrets.SOURCE_READ_TOKEN || github.token }}
 
+      # The published version is the version the branch tip is tagged with.
       - name: Fetch the release tags
         working-directory: src
         run: git fetch --force origin '+refs/tags/bite_*:refs/tags/bite_*'
@@ -298,11 +204,13 @@ jobs:
           TARGET: ${{ needs.prepare.outputs.target }}
         run: python3 pipeline/stage.py --target "$TARGET" --source src
 
-      # Deliberately not the verify action: it ran on this commit, or was skipped
-      # deliberately, and re-running the tests here would hold the registry lock
-      # for the length of a full build. This is also the only place the registry
-      # token is exposed, and this job is the only one that names the `crates-io`
-      # environment.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: stage-${{ needs.prepare.outputs.target }}
+          path: src/dist-stage.json
+
+      # Even a real publish starts with `publish.py --dry-run`'s packaging, so a
+      # manifest crates.io would reject is found here rather than mid-release.
       #
       # The token comes from the secret, not from a `cargo login` on a developer
       # machine: a release is then reproducible from the tag alone, and no local
