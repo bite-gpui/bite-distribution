@@ -16,7 +16,17 @@
 # reviewers belong. A single `registry-publish` concurrency group means two
 # releases never overlap. The token is a repository/Environment secret and never
 # reaches a pull request, because this workflow has no pull-request trigger.
+#
+# `skip_verify` opens a third way in, deliberately: it publishes a staged tree
+# without running the verification suite, for iterating on the publisher itself —
+# a missing token, a rate limit, a crate whose manifest crates.io rejects — where
+# the minutes `verify` takes are the thing being waited on and not what is being
+# tested. It is off by default, refused on a dry run (where verification *is* the
+# work), still fenced by the confirmation input and the environment's reviewers,
+# and named in the run's title so an unverified release is obvious in the list.
 name: Release
+
+run-name: ${{ github.event.inputs.skip_verify == 'true' && format('Release {0} — UNVERIFIED', github.event.inputs.target) || format('Release {0}', github.event.inputs.target) }}
 
 on:
   workflow_dispatch:
@@ -49,6 +59,15 @@ on:
         type: boolean
         required: false
         default: true
+      skip_verify:
+        description: 'publish without verification — for iterating on crates.io itself, not for a release'
+        type: boolean
+        required: false
+        default: false
+      only:
+        description: 'publish only these crates, comma-separated — the resume after one of them failed'
+        required: false
+        default: ''
 
 # Stable and preview uploads share one crates.io namespace, and the release
 # targets share crate names, so two releases must never overlap.
@@ -76,6 +95,10 @@ jobs:
       branch: ${{ steps.resolve.outputs.branch }}
       version: ${{ steps.resolve.outputs.version }}
       dry_run: ${{ inputs.dry_run }}
+      # Passed through as outputs rather than read from `inputs` in the jobs that
+      # need them: an output is unambiguously available at job level.
+      skip_verify: ${{ inputs.skip_verify }}
+      only: ${{ inputs.only }}
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v5
@@ -104,20 +127,53 @@ jobs:
           echo "confirm ($CONFIRM) does not match target ($TARGET)" >&2
           exit 1
 
+      - name: Refuse to skip verification on a dry run
+        env:
+          SKIP: ${{ inputs.skip_verify }}
+          DRY: ${{ inputs.dry_run }}
+        run: |
+          # Compared as shell strings, as the summary below does: whether a
+          # dispatch boolean arrives as a boolean or as a string, interpolating
+          # it here yields "true" or "false" either way.
+          if [ "$SKIP" = "true" ] && [ "$DRY" = "true" ]; then
+            echo "skip_verify is for a real publish. On a dry run verification is the" >&2
+            echo "whole work, so the two together are refused rather than quietly doing" >&2
+            echo "only one of them." >&2
+            exit 1
+          fi
+
+      - name: Say so when verification is skipped
+        env:
+          SKIP: ${{ inputs.skip_verify }}
+          DRY: ${{ inputs.dry_run }}
+          TARGET: ${{ steps.resolve.outputs.target }}
+          VERSION: ${{ steps.resolve.outputs.version }}
+        run: |
+          if [ "$SKIP" = "true" ] && [ "$DRY" != "true" ]; then
+            echo "::warning title=unverified release::$TARGET $VERSION will be published without verification"
+          fi
+
       - name: Summarise
         env:
           MODE: ${{ inputs.dry_run }}
           TARGET: ${{ steps.resolve.outputs.target }}
           VERSION: ${{ steps.resolve.outputs.version }}
+          ONLY: ${{ inputs.only }}
         run: |
           if [ "$MODE" = "false" ]; then
             echo "::notice title=release::$TARGET $VERSION will be published to crates.io"
           else
             echo "::notice title=dry run::$TARGET $VERSION will be staged and verified, not uploaded"
           fi
+          if [ -n "$ONLY" ]; then
+            echo "::notice title=partial release::only $ONLY will be published"
+          fi
 
   verify:
     needs: prepare
+    # Stated rather than left to `needs` alone: a job that has a condition runs
+    # after a failed dependency unless the condition itself says otherwise.
+    if: ${{ needs.prepare.result == 'success' && needs.prepare.outputs.skip_verify == 'false' }}
     runs-on: ubuntu-latest
     timeout-minutes: 75
     outputs:
@@ -183,9 +239,13 @@ jobs:
           path: src/dist-stage.json
 
   publish:
-    needs: [verify, prepare]
-    # A dispatch publishes only when it said so; there is no other way in.
-    if: needs.prepare.outputs.dry_run == 'false'
+    needs: [prepare, verify]
+    # A dispatch publishes when it asked to *and* has a verification behind it —
+    # one that passed, or one it deliberately skipped. The condition is explicit
+    # because a job that has one is not stopped by a failed dependency the way a
+    # job without one is, and publishing after a failed verification is the one
+    # outcome that has to be impossible.
+    if: ${{ needs.prepare.result == 'success' && needs.prepare.outputs.dry_run == 'false' && (needs.verify.result == 'success' || needs.verify.result == 'skipped') }}
     runs-on: ubuntu-latest
     # Approval gate, and where CARGO_REGISTRY_TOKEN lives. Configure the
     # environment with required reviewers: it is the last thing between a dispatch
@@ -209,6 +269,22 @@ jobs:
         working-directory: src
         run: git fetch --force origin '+refs/tags/bite_*:refs/tags/bite_*'
 
+      # The token is only visible to a job that names the environment, so this is
+      # the first place it can be checked. Failing here costs seconds; failing
+      # inside publish.py costs a staging run first.
+      - name: Require the registry token
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: |
+          if [ -n "$CARGO_REGISTRY_TOKEN" ]; then
+            exit 0
+          fi
+          echo "::error title=missing secret::CARGO_REGISTRY_TOKEN is empty. It belongs on" \
+               "the \`crates-io\` environment (Settings -> Environments), which is the only" \
+               "place this job reads it from. A hand release uses \`cargo login\`, or the same" \
+               "variable in the shell."
+          exit 1
+
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: '1.95.0'
@@ -222,10 +298,11 @@ jobs:
           TARGET: ${{ needs.prepare.outputs.target }}
         run: python3 pipeline/stage.py --target "$TARGET" --source src
 
-      # Deliberately not the verify action: it already ran on this commit,
-      # and re-running tests here would hold the registry lock for the length of
-      # a full build. This is also the only place the registry token is exposed,
-      # and this job is the only one that names the `crates-io` environment.
+      # Deliberately not the verify action: it ran on this commit, or was skipped
+      # deliberately, and re-running the tests here would hold the registry lock
+      # for the length of a full build. This is also the only place the registry
+      # token is exposed, and this job is the only one that names the `crates-io`
+      # environment.
       #
       # The token comes from the secret, not from a `cargo login` on a developer
       # machine: a release is then reproducible from the tag alone, and no local
@@ -234,9 +311,14 @@ jobs:
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
           TARGET: ${{ needs.prepare.outputs.target }}
+          ONLY: ${{ needs.prepare.outputs.only }}
         run: |
           set -o pipefail
-          python3 pipeline/publish.py --stage src 2>&1 | tee publish.log
+          args=(--stage src)
+          if [ -n "$ONLY" ]; then
+            args+=(--only "$ONLY")
+          fi
+          python3 pipeline/publish.py "${args[@]}" 2>&1 | tee publish.log
 
       # A rate-limited first release is interrupted more often than it fails, so
       # the log is the thing to read: it names the crate that stopped the run and

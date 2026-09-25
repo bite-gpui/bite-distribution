@@ -195,12 +195,37 @@ series, so both lineages could push a tag of the same name and the tag would not
 say which branch meant it. `--for-tag` refuses such a tag with that reason rather
 than guessing.
 
+Two further inputs exist for iterating on the publisher rather than on the
+crates, where the minutes `verify` takes are the thing being waited on and not
+what is being tested:
+
+- **`skip_verify`** publishes a staged tree without running the verification
+  suite. It is off by default; refused together with a dry run, where verifying
+  *is* the work; still behind the confirmation input and the environment's
+  reviewers; and named in the run's title, so an unverified release is
+  identifiable in the run list rather than only in a log. It is for testing a
+  token, a rate limit, or a crate whose manifest crates.io rejects — not for a
+  release, and least of all for the first release of a name.
+- **`only`** passes `--only` to `publish.py`, publishing just the named crates.
+  That is the resume after one crate failed: the publish log names it, and this
+  republishes it without replaying the ones that already landed. It cannot
+  smuggle out a partial release, because the withheld refusal is computed over
+  the whole release before the selection is applied.
+
+The publish job's condition names what it requires instead of relying on `needs`:
+a job that has an `if` runs after a failed dependency unless the condition itself
+says otherwise, so `publish` requires `prepare` to have succeeded and `verify` to
+have either succeeded or been deliberately skipped. Publishing after a failed
+verification is the one outcome the workflow has to make impossible.
+
 The publish job runs behind the `crates-io` environment — required reviewers and
 the token belong there, and it is the only place a dispatch can turn into an
 upload — under a single `registry-publish` concurrency group, because the release
-targets share crate names and crates.io versions are immutable. It does not
-re-run full verification: that already passed on
-the same commit, and holding the registry lock through a test suite is how a
-release ends up half done. It does keep the publish log as an artifact, which is
-what names the crate a rate limit stopped the run at and when the next attempt is
-allowed.
+targets share crate names and crates.io versions are immutable. Because only a
+job that names the environment can see the secret, the token is checked as that
+job's first step after checkout: failing there costs seconds, where letting
+`publish.py` find it empty costs a staging run first. It does not re-run full
+verification — that passed on the same commit, or was skipped deliberately — and
+holding the registry lock through a test suite is how a release ends up half
+done. It does keep the publish log as an artifact, which is what names the crate
+a rate limit stopped the run at and when the next attempt is allowed.
