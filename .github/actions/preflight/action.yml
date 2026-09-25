@@ -1,0 +1,87 @@
+# The cheap checks, ordered so that a staged tree which cannot be published fails
+# before anything compiles.
+#
+# Every step here answers in seconds — reading the report, resolving the workspace,
+# listing what each crate would package, and running the Apple backend's build
+# script. The compile-and-test phase comes after, so a packaging escape, which is
+# the class of defect this project exists to catch, is reported in under a minute
+# instead of after a closure's worth of compilation.
+name: Preflight a staged target
+description: Read the stage report, resolve the workspace, and check packaging against the archive
+
+inputs:
+  stage:
+    description: path to the staged checkout (the tree pipeline/stage.py mutated in place)
+    required: true
+  apple:
+    description: run the Apple backend's cbindgen step on this host
+    required: false
+    default: 'true'
+
+outputs:
+  native:
+    description: space-separated crates that are publishable and have a native target
+    value: ${{ steps.report.outputs.native }}
+  tested:
+    description: space-separated crates with tests to run
+    value: ${{ steps.report.outputs.tested }}
+  wasm:
+    description: space-separated crates checkable only for wasm32, and so excluded
+    value: ${{ steps.report.outputs.wasm }}
+
+runs:
+  using: composite
+  steps:
+    - name: Read the stage report
+      id: report
+      shell: bash
+      working-directory: ${{ inputs.stage }}
+      run: |
+        set -euo pipefail
+        # Outputs are appended to $GITHUB_OUTPUT; annotations are printed to
+        # stdout, because a workflow command written into the output file is
+        # just a malformed output value.
+        python3 - <<'PY'
+        import json, os, pathlib
+        report = json.loads(pathlib.Path("dist-stage.json").read_text())
+        with open(os.environ["GITHUB_OUTPUT"], "a") as outputs:
+            outputs.write("native=" + " ".join(report["native"]) + "\n")
+            outputs.write("tested=" + " ".join(report.get("tested", [])) + "\n")
+            outputs.write("wasm=" + " ".join(report.get("wasm_only", [])) + "\n")
+        for entry in report.get("blocked", []):
+            print(f"::warning title=withheld::{entry['published']} is withheld: {entry['reason']}")
+        for name in report.get("wasm_only", []):
+            print(f"::notice title=wasm-only::{name} is not checkable natively and is excluded")
+        PY
+
+    # Resolving is not compiling, and it is far cheaper: it caught the
+    # dependency-version mismatch a rename with a stale version leaves behind,
+    # across the whole workspace, in seconds. It is also what has to succeed before
+    # the next step can package anything, because `cargo package` resolves too.
+    - name: Resolve the workspace
+      shell: bash
+      working-directory: ${{ inputs.stage }}
+      run: cargo metadata --format-version 1 > /dev/null
+
+    # `--list` is the cheap half of packaging. `checks/check_reads.py` turns it into a
+    # check: every path a crate names at build time has to be inside the crate and
+    # in the archive. That is the only place the `gpui_apple` defect was visible —
+    # its build script read shader types from a sibling crate, which the workspace
+    # supplied and the tarball did not, and the crate is in `no_verify`, so the
+    # dry run that packaging does never resolves it either.
+    - name: Package file sets
+      shell: bash
+      working-directory: ${{ inputs.stage }}
+      run: python3 "$GITHUB_WORKSPACE/checks/check_reads.py" --stage .
+
+    # Cargo compiles build scripts for the *host*, so `cfg(target_os = "macos")`
+    # keeps the Apple crate's cbindgen step from running on any runner this
+    # project has — which is how a `build.rs` reading five shader types from
+    # sibling crates reached the registry. `checks/check_reads.py` finds that
+    # statically; this runs the step anyway, over the crate's own vendored sources,
+    # and shows cbindgen's own message when it cannot read them.
+    - name: Apple build script
+      if: inputs.apple == 'true'
+      shell: bash
+      working-directory: ${{ inputs.stage }}
+      run: python3 "$GITHUB_WORKSPACE/checks/apple_build_check.py" --stage .

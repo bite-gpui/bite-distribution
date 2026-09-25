@@ -4,7 +4,7 @@
 **Why this exists.** Cargo compiles build scripts for the *host*, not for the
 target, so `#[cfg(target_os = "macos")] mod macos_build` in
 `crates/gpui_apple/build.rs` is compiled out on every runner we have. The cbindgen
-step that reads five shader sources has therefore never run in any gate, on any
+step that reads five shader sources has therefore never run in any check, on any
 leg — which is how a `build.rs` that read those files from *sibling crates* got
 as far as the registry, where every consumer's macOS build failed with
 `ParseCannotOpenFile`.
@@ -25,7 +25,7 @@ change in its shape fails loudly rather than silently checking nothing:
   check is about;
 * `#![allow(unused)]` is added, because removing those two calls is what makes
   the binding and the two functions dead. Those warnings are the transformation's
-  doing rather than the crate's, and the gates build with `-D warnings`, so left
+  doing rather than the crate's, and the checks build with `-D warnings`, so left
   alone they would fail this check for a reason that has nothing to do with
   whether cbindgen can read the sources.
 
@@ -65,7 +65,7 @@ COMPILATION = re.compile(
 MINIMUM_HEADER = 1024
 
 # Stripping the shader-compilation calls leaves `header_path` unused and the two
-# functions it called dead. The gates build with `-D warnings`, so that is four
+# functions it called dead. The checks build with `-D warnings`, so that is four
 # errors about our own edit rather than about the crate: measured on the v1.21.0
 # stage, where the harness failed to compile for exactly this reason. Allow the
 # whole `unused` group rather than enumerate the four, because the next branch's
@@ -88,7 +88,7 @@ publish = false
 # The build script gates its two halves on this, and the transform requires that it
 # does, so the feature is always declared. Without it the harness sees a cfg for a
 # feature its manifest does not mention, and `unexpected_cfgs` reports it — an
-# error, under the `-D warnings` the gates build with, for a fact about this
+# error, under the `-D warnings` the checks build with, for a fact about this
 # generated manifest rather than about the crate.
 [features]
 runtime_shaders = []
@@ -215,7 +215,7 @@ def main(argv: list[str]) -> int:
             # Two very different reasons for finding nothing, and they must not be
             # confused. A lineage that never had the cbindgen step has nothing to
             # check and that is a pass: ce is built on 1.14, whose `gpui_macos`
-            # build script predates it, so the gate runs this step for a lineage
+            # build script predates it, so the checks run this step for a lineage
             # with nothing in it. But an Apple crate whose build script still calls
             # cbindgen and was not recognised means the shape changed, and passing
             # there would lose the coverage that caught the sibling-crate reads

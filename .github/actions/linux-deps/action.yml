@@ -1,0 +1,32 @@
+# The system packages a Linux leg needs before anything links.
+#
+# Its own action because every job that compiles or packages the closure installs
+# the same list, and the list is the union of two sources: what ce's publish job
+# installs, and what zed's own `script/linux` installs for Debian/Ubuntu. ce's
+# list alone is not enough — it was assembled for packaging rather than for
+# linking test binaries, and the first run of the checks died at the linker with
+# `unable to find library -lX11-xcb` while linking `gpui_macros`'s `render_test`,
+# which pulls the whole stack. zed's script/linux is the source of truth for the
+# rest; its gtk and webkit entries are for the editor crates, which the closure
+# does not contain.
+name: Install Linux build dependencies
+description: Install the system packages the closure needs to link on Debian/Ubuntu
+
+runs:
+  using: composite
+  steps:
+    # The list is Debian's; a macOS leg needs none of it, and a macOS leg is
+    # wanted only to compile the Apple backends, whose build script is the one
+    # piece of code that can read the vendored shader types.
+    - name: Install system dependencies
+      if: runner.os == 'Linux'
+      shell: bash
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          libasound2-dev libegl1-mesa-dev libfontconfig-dev libgit2-dev \
+          libglib2.0-dev libgles2-mesa-dev libssl-dev libsqlite3-dev \
+          libva-dev libvulkan1 libvulkan-dev libwayland-dev \
+          libx11-dev libx11-xcb-dev libxkbcommon-dev libxkbcommon-x11-dev \
+          libxcb-randr0-dev libxcb-shape0-dev libxcb-xfixes0-dev \
+          libxcb-xinput-dev libzstd-dev

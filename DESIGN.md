@@ -127,7 +127,7 @@ Measured closures (normal + build reachability):
 
 Union across targets: **50 source packages**. The release-line closure did not
 change over the ten branches — 1.14 and 1.21.0-pre resolve to exactly the same
-31 crates, and `bite_master` is that set minus `media` — but the gate re-measures
+31 crates, and `bite_master` is that set minus `media` — but verification re-measures
 per materialized worktree rather than assuming it.
 
 ## 5. Published names
@@ -221,7 +221,7 @@ Three consequences, all deliberate:
   branch is re-tagged: the fix is `amendment += 1`, push, tag. Rolling targets
   pay nothing, because they are dated at staging time. That is the intended
   price of the version being a contract rather than a label, and it is the thing
-  to weigh when the gate finds a source-level defect. ce's broken example was
+  to weigh when verification finds a source-level defect. ce's broken example was
   worth fixing under a rolling branch, where it cost nothing; the same fix on a
   release branch would want to be certain, because it is nine tags.
 
@@ -326,7 +326,7 @@ through test features.
 no edit at all — cargo does not carry `[patch]` into a published manifest. The
 stager reports those separately (`patched deps: calloop`) rather than counting
 them as fixes. The consequence to keep in mind: for a patched dependency, the
-gate builds the git source while consumers get the registry one.
+verification builds the git source while consumers get the registry one.
 
 **Per-target differences are real, not hypothetical.** `bite_v1.14.x` declares
 `async-tar` as registry `"0.6"`; 1.20.2, 1.21.0-pre and master all take it from a
@@ -399,41 +399,65 @@ What the stager does for every crate:
 - records the origin in `[package.metadata.bite]` (§3).
 
 Not yet done, and worth deciding with §13.4: per-file licence headers, and the
-copyleft audit as a *gate* rather than a measurement. Today the GPL crates are
+copyleft audit as a *check* rather than a measurement. Today the GPL crates are
 reported by the closure scan (they show up in the stage report's `license`
 field) but nothing fails on them.
 
-## 10. Gates
+## 10. Verification
 
-Run by `.github/actions/gate/action.yml` against the staged checkout, per
-target, before anything is published. The scripts live in two directories: the
-pipeline that produces the stage in `pipeline/`, and the checks that judge it in
-`checks/`. The gate invokes them by path under `$GITHUB_WORKSPACE`, so a check can
-run from any working directory; the `pipeline/` modules must stay together,
-because they import each other by bare name and add their own directory to
-`sys.path`. All of them use `--all-features`: the
-migration project gated the closure with default features and with all of them,
-and only the latter compiles the code behind `bench-support` and `profiler`.
-With default features that code is reported dead, which is how the gate first
-failed — on `gpui_authoring::Window::present_if_needed`, whose only callers are
-in `bench_context` and `profiler::hang`.
+Run by `.github/actions/verify/action.yml` against the staged checkout, per
+target, before anything is published. It is one entry point over four actions,
+so that "the release workflow runs the same checks as a pull request" holds by
+construction rather than by review — and so a phase can also be run on its own:
 
-1. `pipeline/targets.py --validate` and `pipeline/naming.py --verify` — the table is well formed,
-   and every closure crate has a name that no other crate needs (§12).
-2. `cargo metadata --format-version 1` — the whole workspace resolves. Cheap,
-   and it is what caught the stale-version rename in §7 step 4.
-3. `cargo check -p <native closure> --all-targets --all-features` — zero warnings.
-4. `cargo clippy -p <native closure> --all-targets --all-features -- -D warnings`.
-5. `cargo test -p <native closure> --all-features`.
-6. `checks/check_reads.py` — for every publishable crate, `cargo package --list` gives
-   the file set that would be uploaded, and every path the crate names at build
-   time has to be inside it. See below.
-7. `checks/apple_build_check.py` — the Apple crate's build script feeds cbindgen five
+| action | what it is | cost |
+| --- | --- | --- |
+| `.github/actions/linux-deps` | the system packages a Linux leg links against | seconds |
+| `.github/actions/preflight` | the stage report, `cargo metadata`, and the two static packaging checks | seconds |
+| `.github/actions/code-checks` | clippy, and the closure's tests | minutes |
+| `.github/actions/build-checks` | the publish dry run, then the isolated build | minutes |
+
+They run cheapest first, so a crate that cannot be staged or a path that escapes
+its archive is reported in under a minute rather than after a closure's worth of
+compilation. That ordering is the point: the defect classes this project exists
+to catch are the cheap ones to detect and the expensive ones to discover late.
+
+The scripts live in two directories: the pipeline that produces the stage in
+`pipeline/`, and the checks that judge it in `checks/`. The actions invoke them by
+path under `$GITHUB_WORKSPACE`, so a check can run from any working directory; the
+`pipeline/` modules must stay together, because they import each other by bare
+name and add their own directory to `sys.path`.
+
+**Clippy is the compile.** `cargo clippy --all-targets --all-features -- -D
+warnings` type-checks the same targets a plain `cargo check` would and adds the
+lints on top, and because clippy runs under a compiler wrapper that
+re-fingerprints the workspace, a check step ahead of it recompiled all 31 crates
+for nothing. There is one step, and the lints are the reason it is worth having.
+
+**`--all-features` throughout.** The migration project checked the closure with
+default features and with all of them, and only the latter compiles the code
+behind `bench-support` and `profiler`. With default features that code is
+reported dead, which is how verification first failed — on
+`gpui_authoring::Window::present_if_needed`, whose only callers are in
+`bench_context` and `profiler::hang`.
+
+In order:
+
+1. `pipeline/targets.py --validate` and `pipeline/naming.py --verify` — the table
+   is well formed, and every closure crate has a name that no other crate needs
+   (§12). The workflow runs this before staging, not the action.
+2. `cargo metadata --format-version 1` — the whole workspace resolves. Cheap, and
+   it is what caught the stale-version rename in §7 step 4. `check_reads.py`
+   packages each crate, so it has to resolve first.
+3. `checks/check_reads.py` — for every publishable crate, `cargo package --list`
+   gives the file set that would be uploaded, and every path the crate names at
+   build time has to be inside it. See below.
+4. `checks/apple_build_check.py` — the Apple crate's build script feeds cbindgen five
    shader sources and sits behind `cfg(target_os = "macos")`, which cargo
    evaluates against the *host*: no runner this project has ever ran it. This
    strips that gate and the two shader-compilation calls (both asserted, so a
    change in the script's shape fails loudly), points the script at the crate's
-   own `vendor/` and `metal_renderer.rs`, and so runs cbindgen on Linux. Step 6
+   own `vendor/` and `metal_renderer.rs`, and so runs cbindgen on Linux. Step 3
    finds the same class of defect statically from the archive; this one shows
    cbindgen's own message. It takes whichever crate feeds cbindgen on that branch
    — `gpui_macos` for 1.14 to 1.16, `gpui_apple` from 1.17.
@@ -441,35 +465,37 @@ in `bench_context` and `profiler::hang`.
    Two details are about the harness rather than the crate, and both cost a CI run
    to find. The generated crate declares the `runtime_shaders` feature and allows
    the `unused` lint group, because removing the shader-compilation calls is what
-   makes the binding and the two functions dead, and the gates build with
+   makes the binding and the two functions dead, and the checks build with
    `-D warnings` — four errors about our own edit. And a stage with *no* cbindgen
    build script is a skip with a notice, not a failure: ce is built on 1.14, which
-   never had the step, so the gate runs this on a lineage with nothing in it. The
+   never had the step, so verification runs this on a lineage with nothing in it. The
    skip is narrow — an Apple build script that still calls cbindgen and is not
    recognised still fails, because passing there would lose this check's cover.
-8. `pipeline/publish.py --dry-run` — packages each crate and compiles it as the root of a
+5. `cargo clippy -p <native closure> --all-targets --all-features -- -D warnings`.
+6. `cargo test -p <tested closure> --all-features --lib --tests`.
+7. `pipeline/publish.py --dry-run` — packages each crate and compiles it as the root of a
    build, which is the only check that the published artifact builds. Resolving a
    root's *dev*-dependencies is part of that, so a crate whose dev-dependencies
    cannot resolve is published with `--no-verify` and its compilation is skipped.
    `--allow-dirty` is required throughout because staging rewrites the tree in
    place.
-9. `checks/test_isolated.py` — packages and unpacks every publishable archive, then
+8. `checks/test_isolated.py` — packages and unpacks every publishable archive, then
    compiles a generated crate that depends on all of them. That is what closes
    the `no_verify` gap above: a consumer resolves a dependency's normal
    dependencies and never its dev-dependencies. It is also the only check that
    fails when an archive cannot stand on its own. It compiles with `cargo check`
-   and default features — the gate's workspace-wide `--all-features` check has
+   and default features — the workspace-wide `--all-features` clippy pass has
    already covered the code behind the non-default ones, and a closure's worth of
    codegen is what does not fit on a runner.
 
-**The gate has to be able to see a crate that reads outside itself, and it could
+**Verification has to be able to see a crate that reads outside itself, and it could
 not.** `gpui_apple`'s build script fed cbindgen five shader sources located by
 walking up out of the crate — `CARGO_MANIFEST_DIR/../gpui_types/src/color.rs` —
 which the workspace layout made work and which every published tarball failed on
-with `ParseCannotOpenFile`. Nothing in the gate noticed: the code is behind
+with `ParseCannotOpenFile`. Nothing in the checks noticed: the code is behind
 `#[cfg(target_os = "macos")]`, so a Linux runner never compiles it, and
 `gpui_apple` is in `no_verify`, so the dry run never extracted its tarball
-either. Step 6 is the answer. It reads the paths a build script names, plus the
+either. Step 3 is the answer. It reads the paths a build script names, plus the
 `include_bytes!`/`include_str!`/`#[path]` of every source in the archive, and a
 path that resolves outside the crate — or inside it but not packaged — fails.
 The sources are now vendored under `crates/gpui_apple/vendor/`, which the
@@ -489,10 +515,10 @@ stricter.
 The closure is passed as explicit `-p` flags rather than `--workspace`: the
 checkout carries all ~250 zed crates, and checking them is neither wanted nor
 affordable on every push. Withheld crates (§8) are still checked — they build,
-they just cannot be published — so the gate covers 55 of the 57 names in the
+they just cannot be published — so verification covers 55 of the 57 names in the
 union.
 
-**System packages are the union of two lists**, and the first gate run failed for
+**System packages are the union of two lists**, and the first run failed for
 want of the second. ce's publish job installs nine packages, which was enough to
 *package* crates but not to *link test binaries*: the run died at the linker with
 `unable to find library -lX11-xcb` while linking `gpui_macros`'s `render_test`,
@@ -500,7 +526,7 @@ which pulls the whole stack. zed keeps its Debian/Ubuntu list in `script/linux`,
 and that is the source of truth for the rest — minus its gtk and webkit entries,
 which are for editor crates the closure does not contain.
 
-**The gate is bounded by the runner, and two settings keep it inside that.**
+**Verification is bounded by the runner, and two settings keep it inside that.**
 A debug build of the closure exhausted a runner's disk, and the linker died with
 a bus error — on Linux, the signal a process gets when the file-backed page it
 is writing to cannot be extended. So:
@@ -512,7 +538,7 @@ is writing to cannot be extended. So:
 - the test step uses `--lib --tests` rather than `--all-targets`, because
   `cargo test`'s default selection also *builds every example* and the facade
   declares twenty-five of them, each linking the whole stack. Examples are still
-  type-checked by check and clippy, which do not link; what is given up is
+  type-checked by clippy, which does not link; what is given up is
   verifying that they link, which no consumer ever does.
 - the test step covers only the crates that declare tests (24 of the 30 in
   1.20.2), computed from the sources rather than listed. A test binary links the
@@ -524,7 +550,7 @@ is writing to cannot be extended. So:
 1.95.0, had never seen: six sites where `gpui::hsla` already returns the `Hsla`
 a field wants. Nothing about publishing requires chasing a moving compiler — it
 means fixing branches to satisfy rules that did not exist when they were written
-— so both build workflows name the toolchain the branches were built and gated with,
+— so both build workflows name the toolchain the branches were built and verified with,
 and `rust-toolchain.toml` records it for local runs. Bumping it is a deliberate
 act, taken together with a run that fixes whatever the newer toolchain reports.
 
@@ -536,10 +562,10 @@ its lib compiles to nothing and its lib *test* target cannot resolve those
 imports. zed's own CI does not check it natively either. A `wasm32-unknown-unknown`
 check is the missing piece; zed's recipe for it is a nightly toolchain with
 `-Zbuild-std` and `-C target-feature=+atomics,+bulk-memory,+mutable-globals`.
-This is the one published crate family the gate does not build, and it is the
+This is the one published crate family verification does not build, and it is the
 next thing to fix here.
 
-A target that fails any gate is not publishable. Gate failure is per target, so
+A target that fails verification is not publishable. Failure is per target, so
 `bite_v1.18.x` failing does not hold back `bite_v1.20.2`.
 
 ## 11. Publish order and rate limits
@@ -631,7 +657,7 @@ package's dev-dependencies for every target and a first release has not uploaded
 the crate those dev-dependencies point at yet — either the facade, which is
 published last, or a zed-internal crate that is never published at all. The set
 is derived from the manifests by `pipeline/stage.py` (reported as `no_verify`) rather than
-hand-kept, and the workspace-wide `cargo check` in the gate covers the
+hand-kept, and the workspace-wide clippy pass covers the
 compilation that skips. And the order comes from the manifests rather than a
 hand-kept list, because the two lineages and ten release targets have
 different leaf sets.
@@ -653,7 +679,7 @@ reservation of a name that must exist before anything may name it.
   closure per lineage, so a new crate that would land on a taken name fails long
   before a release rather than during one;
 - **plan** turns the selector into a matrix via `pipeline/targets.py`;
-- **stage** (matrix) checks the target branch out, stages it, and runs the gate.
+- **stage** (matrix) checks the target branch out, stages it, and runs verification.
   A pull request stages one target per lineage (`default`); dispatch with `all`
   when a change could affect every branch. Ten cold builds of gpui on every push
   is hours of CI for a change to a script. The matrix carries a runner label per
@@ -663,7 +689,7 @@ reservation of a name that must exist before anything may name it.
   Linux alone, and the labels are declared once, in `pipeline/targets.py --matrix`, rather
   than in the workflow.
 
-`.github/actions/gate/action.yml` is the gate itself, shared by the workflows that
+`.github/actions/verify/action.yml` is the entry point, shared by the workflows that
 build, so "the release workflow runs the same checks as a pull request" holds by
 construction rather than by review.
 
@@ -725,7 +751,7 @@ The publish job runs behind the `crates-io` environment — required reviewers a
 the token belong there, and it is the only place a dispatch can turn into an
 upload — under a single `registry-publish` concurrency group, because the release
 targets share crate names and crates.io versions are immutable. It does not
-re-run the full gate: that already passed on
+re-run full verification: that already passed on
 the same commit, and holding the registry lock through a test suite is how a
 release ends up half done. It does keep the publish log as an artifact, which is
 what names the crate a rate limit stopped the run at and when the next attempt is

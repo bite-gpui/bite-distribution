@@ -1,0 +1,50 @@
+# Everything a target must pass before any of its crates is published.
+#
+# One entry point, so that "the release workflow runs the same checks as a pull
+# request" holds by construction rather than by review. The phases are separate
+# actions so they can also be run on their own; here they run cheapest first, so
+# the failures that cost seconds are reported before the ones that cost minutes.
+#
+# The target repo is expected to be checked out, tagged and staged before this runs.
+name: Verify a staged target
+description: Preflight, then check and test the closure, then build the published artifacts
+
+inputs:
+  stage:
+    description: path to the staged checkout (the tree pipeline/stage.py mutated in place)
+    required: true
+  test:
+    description: run the closure's tests
+    required: false
+    default: 'true'
+  isolated:
+    description: compile the unpacked archives in a directory with no siblings
+    required: false
+    default: 'true'
+  apple:
+    description: run the Apple backend's cbindgen step on this Linux host
+    required: false
+    default: 'true'
+
+runs:
+  using: composite
+  steps:
+    - uses: ./.github/actions/linux-deps
+
+    - id: preflight
+      uses: ./.github/actions/preflight
+      with:
+        stage: ${{ inputs.stage }}
+        apple: ${{ inputs.apple }}
+
+    - uses: ./.github/actions/code-checks
+      with:
+        stage: ${{ inputs.stage }}
+        native: ${{ steps.preflight.outputs.native }}
+        tested: ${{ steps.preflight.outputs.tested }}
+        test: ${{ inputs.test }}
+
+    - uses: ./.github/actions/build-checks
+      with:
+        stage: ${{ inputs.stage }}
+        isolated: ${{ inputs.isolated }}

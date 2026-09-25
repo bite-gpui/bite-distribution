@@ -407,8 +407,8 @@ def unverifiable(crates: dict, order: list[str], published: dict[str, str]) -> l
     dev-dependencies reach it, and the facade depends on `gpui_authoring` back.
 
     Such a crate is still packaged and its manifest still normalised; only the
-    isolated compilation is skipped, and the gate's workspace-wide check covers
-    what that would have found.
+    isolated compilation is skipped, and the checks' workspace-wide clippy pass
+    covers what that would have found.
     """
     position = {package: index for index, package in enumerate(order)}
     names = set()
@@ -491,8 +491,8 @@ def crate_has_tests(crate_dir: Path) -> bool:
 
     A test binary links the whole stack, and the facade declares twenty-five
     examples that each link it too — which is what exhausted the CI runner. So
-    the test step covers the crates that have tests, and `cargo check
-    --all-targets` covers everything else, examples included.
+    the test step covers the crates that have tests, and the clippy pass's
+    `--all-targets` covers everything else, examples included.
     """
     if (crate_dir / "tests").is_dir():
         return True
@@ -732,7 +732,7 @@ def stage(target: dict, source: Path, report_path: Path | None, strict: bool = F
     out.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
 
     # A blocked crate is a publishing limitation, not a staging failure: the
-    # tree still builds (a git dependency resolves locally), so the gate can
+    # tree still builds (a git dependency resolves locally), so the checks can
     # check everything and CI stays meaningful. `publish.py` is where the limit
     # is enforced, and it refuses a release rather than shipping part of one.
     for entry in report["unresolved_git"]:

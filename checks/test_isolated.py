@@ -19,7 +19,7 @@ The unpacked crates are named `<published>-<version>`, so a path that steps up
 with `..` and then names a source crate — the `gpui_apple` shape — finds nothing:
 the directory it would look for is not the directory it is standing in.
 
-**`cargo check`, not `cargo build`.** The gate has already compiled and tested
+**`cargo check`, not `cargo build`.** The checks have already compiled and tested
 the closure, and `publish.py --dry-run` has already built most of these archives
 for real. What is left to prove is that each archive is *self-sufficient*:
 resolution succeeds, build scripts run, and every path the crate names is in the
@@ -27,7 +27,7 @@ tarball. `check` proves all of that and emits no code, which is what keeps the
 step's disk inside a runner. `--build` does the full build when it is wanted.
 
 Default features, not `--all-features`: this is the build a consumer gets, and
-the gate's workspace-wide `--all-features` check already covers the code behind
+the checks' workspace-wide `--all-features` clippy pass already covers the code behind
 `bench-support`, `inspector` and `profiler`.
 
 Usage:

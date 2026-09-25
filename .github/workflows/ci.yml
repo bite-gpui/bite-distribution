@@ -132,7 +132,7 @@ jobs:
 
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
-          # Pinned to the toolchain the branches were built and gated with.
+          # Pinned to the toolchain the branches were built and verified with.
           # Floating stable is how a run failed on a lint that did not exist
           # when the code was written; see rust-toolchain.toml.
           toolchain: '1.95.0'
@@ -159,7 +159,7 @@ jobs:
       - name: Stage
         run: python3 pipeline/stage.py --target '${{ matrix.target }}' --source src
 
-      - uses: ./.github/actions/gate
+      - uses: ./.github/actions/verify
         with:
           stage: src
 

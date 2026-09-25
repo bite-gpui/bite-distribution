@@ -33,11 +33,12 @@ pipeline/        the release pipeline, run in order
   stage.py         carve a target into a publishable state
   publish.py       publish a staged target, in dependency order
   tag_release.py   resolve a branch to the tag it must carry, push it
-checks/          the gates a staged tree must pass
+checks/          the checks a staged tree must pass
   check_reads.py       packaged file sets, and paths that escape the crate
   apple_build_check.py the Apple crate's cbindgen header is generated
   test_isolated.py     each tarball compiles with no siblings, as crates.io sees it
-.github/         ci.yml, tag.yml, release.yml, actions/gate/
+.github/         ci.yml, tag.yml, release.yml, actions/verify/ (over linux-deps,
+                 preflight, code-checks and build-checks)
 targets.toml     the twelve target branches, the table the pipeline reads
 DESIGN.md  README.md  rust-toolchain.toml
 ```
@@ -178,13 +179,16 @@ whole of it; `pipeline/targets.py --for-tag` is the lookup it would need.
 ## CI
 
 - `.github/workflows/ci.yml` — pull requests and `main`: validate the table and
-  naming rule, then stage one target per lineage through the gate. Dispatch with
-  `all` for every branch.
-- `.github/actions/gate/action.yml` — the gate, shared by the release workflows:
-  system deps, resolve, check, clippy `-D warnings`, test, package file sets
-  (`checks/check_reads.py`), the Apple check (`checks/apple_build_check.py`) where
-  the lineage has one, publish dry run, and the isolated build
-  (`checks/test_isolated.py`).
+  naming rule, then stage one target per lineage through verification. Dispatch
+  with `all` for every branch.
+- `.github/actions/verify/action.yml` — the entry point, shared by the release
+  workflows so they run the same checks as a pull request by construction. It runs
+  four phase actions, cheapest first: `linux-deps` (the system packages a Linux leg
+  links against), `preflight` (the stage report, `cargo metadata`, and the two
+  static packaging checks — `checks/check_reads.py` and the Apple check,
+  `checks/apple_build_check.py`, where the lineage has one), `code-checks` (clippy
+  `-D warnings`, then the closure's tests), and `build-checks` (the publish dry
+  run, then the isolated build, `checks/test_isolated.py`).
 - `.github/workflows/tag.yml` — the manual release step. Dispatch it with a branch
   from the source repository; it resolves the tag, refuses to move one, pushes it,
   and dispatches `release.yml`.
@@ -234,24 +238,24 @@ leaf crate in isolation; the version scheme's edges (amendment bounds,
 prereleases, patch overflow); and that an untagged branch is refused with the
 exact command to fix it.
 
-The gate has also found a real source defect and it is fixed on the branch:
+Verification has also found a real source defect and it is fixed on the branch:
 ce's `gpui_wgpu` example called `Bounds::centered` without the `BoundsExt` trait
 in scope, which every other example gets through gpui's prelude. It is ce-only —
 those examples do not exist on the zed-lineage branches. A rolling branch pays
 nothing for a source fix; a tagged release branch pays an amendment bump and a
 new tag (DESIGN §6).
 
-Staging and the gate between them have found eight things a design document
+Staging and verification between them have found eight things a design document
 would not have: the lib name is derived from the package name unless pinned,
 `collections` already carried a version that had to be overridden rather than
 added, ce declares its path dependencies in each member instead of the workspace
 table, `[profile.dev.package]` lists package names that must not be rewritten,
-the version cannot be derived from a tag the checkout does not have, the gate was
-checking with default features where the project checks with all of them, and
+the version cannot be derived from a tag the checkout does not have, the checks
+were running with default features where the project checks with all of them, and
 crates *outside* the closure that depend on renamed ones break the whole
 workspace even though they are not published.
 
-Not yet run: the compile gates locally (this host is at 98% disk and a full
+Not yet run: the compile checks locally (this host is at 98% disk and a full
 closure build needs tens of GB — CI runs them) and the wasm32 check for
 `gpui_web` (DESIGN §10).
 

@@ -116,7 +116,7 @@ jobs:
             echo "::notice title=dry run::$TARGET $VERSION will be staged and verified, not uploaded"
           fi
 
-  gate:
+  verify:
     needs: prepare
     runs-on: ubuntu-latest
     timeout-minutes: 75
@@ -138,7 +138,7 @@ jobs:
 
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
-          # Pinned to the toolchain the branches were built and gated with;
+          # Pinned to the toolchain the branches were built and verified with;
           # see rust-toolchain.toml.
           toolchain: '1.95.0'
           components: clippy
@@ -173,7 +173,7 @@ jobs:
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "::notice title=$TARGET::staged $TARGET as $version"
 
-      - uses: ./.github/actions/gate
+      - uses: ./.github/actions/verify
         with:
           stage: src
 
@@ -183,7 +183,7 @@ jobs:
           path: src/dist-stage.json
 
   publish:
-    needs: [gate, prepare]
+    needs: [verify, prepare]
     # A dispatch publishes only when it said so; there is no other way in.
     if: needs.prepare.outputs.dry_run == 'false'
     runs-on: ubuntu-latest
@@ -222,7 +222,7 @@ jobs:
           TARGET: ${{ needs.prepare.outputs.target }}
         run: python3 pipeline/stage.py --target "$TARGET" --source src
 
-      # Deliberately not the gate action: the gate already ran on this commit,
+      # Deliberately not the verify action: it already ran on this commit,
       # and re-running tests here would hold the registry lock for the length of
       # a full build. This is also the only place the registry token is exposed,
       # and this job is the only one that names the `crates-io` environment.

@@ -29,8 +29,8 @@ is going to be published by hand, so plain `cargo publish` works there.
 of its own build, which resolves the root's dev-dependencies for every target, so
 a crate that dev-depends on a crate published after it or on a workspace crate
 that is never published cannot be verified. stage.py reports those as
-`no_verify`; they are published with `--no-verify`, and the gate's workspace-wide
-check and clippy cover the compilation that skips.
+`no_verify`; they are published with `--no-verify`, and the checks' workspace-wide
+clippy pass covers the compilation that skips.
 
 **Rate limits.** crates.io allows a burst of five *new* crate names per account
 and then one every ten minutes; new *versions* of existing crates get a burst of
