@@ -1,9 +1,9 @@
 # bite-gpui distribution
 
-Publishes the `bite_*` gpui branches as installable crates: for each target
-branch, extract the crates it depends on out of the monorepo, rename them, and
-release them to crates.io as `bite-gpui` / `bite-gp-*` (zed lineage) and
-`bite-gpui-ce` / `bite-gp-ce-*` (community-edition lineage).
+Publishes the `bite_*` branches as installable crates: for each target branch,
+extract its GPUI crates set — the crates it depends on — out of the monorepo,
+rename them, and release them to crates.io as `bite-gpui` / `bite-gp-*` (zed
+lineage) and `bite-gpui-ce` / `bite-gp-ce-*` (community-edition lineage).
 
 The design is the [architecture specification](DESIGN.md), which is the map: the
 chapters are in `docs/`, and they keep their section numbers, so `§6` is `§6`
@@ -31,7 +31,7 @@ part of any published crate.
 ```
 pipeline/        the release pipeline, run in order
   targets.py       validate the table, select targets, feed CI
-  inventory.py     a checkout's in-path closure, and the publish order
+  inventory.py     the GPUI crates set a checkout reaches, and the publish order
   naming.py        source package → published crate name, verified per target
   stage.py         carve a target into a publishable state
   publish.py       publish a staged target, in dependency order
@@ -86,7 +86,7 @@ being released.
 | file | what it does |
 | --- | --- |
 | `targets.toml` | the twelve target branches, their lineage, version scheme and URLs |
-| `pipeline/inventory.py` | resolves a checkout's in-path dependency closure, and the publish order |
+| `pipeline/inventory.py` | resolves the GPUI crates set a checkout reaches by path dependency, and the publish order |
 | `pipeline/naming.py` | source package → published crate name; `--verify` checks it per target |
 | `pipeline/targets.py` | validates and selects targets; `--tags` says what to tag, `--for-tag` and `--for-branch` resolve the other way, `--matrix` and `--env` feed CI |
 | `pipeline/stage.py` | carves a target into a publishable state |
@@ -97,10 +97,10 @@ being released.
 | `checks/test_isolated.py` | each tarball compiles alone, the way crates.io ships it |
 | `checks/workflows.py` | lints the CI wiring: actionlint over the workflows, and the actions' inputs and outputs |
 
-`pipeline/inventory.py` is the load-bearing one and is useful on its own — the closures
+`pipeline/inventory.py` is the load-bearing one and is useful on its own — the sets
 it reports are measured, not assumed, which is how the project knows the zed
 release line is 31 crates, ce is 26, and which seven git dependencies the
-closure needs replaced.
+set needs replaced.
 
 ```sh
 # Run from the zed clone root, where `.dist/` is; the commands that read a
@@ -115,7 +115,7 @@ python3 .dist/pipeline/tag_release.py --branch bite_v1.21.0 --repo <a checkout o
 # every target, and the tag its branch must carry
 python3 .dist/pipeline/targets.py --tags --select all
 
-# every target's closure, with names and collisions checked
+# every target's GPUI crates set, with names and collisions checked
 python3 .dist/pipeline/naming.py --verify --lineage-repo zed=. --lineage-repo ce=.tools/worktrees/wt-ce
 
 # the whole union of published names
@@ -216,16 +216,16 @@ whole of it; `pipeline/targets.py --for-tag` is the lookup it would need.
   request stages, and dispatching it directly is how a target is verified before a
   release. A dispatched run also uploads `verified-<target>-<version>`, the receipt
   `release.yml` reads.
-- `.github/actions/build-env/action.yml` — what compiling the closure needs, in
+- `.github/actions/build-env/action.yml` — what compiling the set needs, in
   one place: the Linux system packages, python 3.13 and the pinned toolchain. Both
   `verify.yml` and the release job prepare it, which is the point — `cargo publish`
   verifies a release by building the packaged crate as the root of its own build,
-  so the release job compiles the closure too.
+  so the release job compiles the set too.
 - `.github/actions/verify/action.yml` — the three phase actions `verify.yml` runs,
   cheapest first: `preflight` (the stage report, `cargo metadata`, and the two
   static packaging checks — `checks/check_reads.py` and the Apple check,
   `checks/apple_build_check.py`, where the lineage has one), `code-checks` (clippy
-  `-D warnings`, then the closure's tests), and `build-checks` (the publish dry
+  `-D warnings`, then the set's tests), and `build-checks` (the publish dry
   run, then the isolated build, `checks/test_isolated.py`).
 - `.github/workflows/tag.yml` — the manual release step. Dispatch it with a branch
   from the source repository; it resolves the tag, refuses to move one, pushes it,
@@ -271,7 +271,7 @@ rewrites, reporting nine withheld rather than failing (four blocked by `wgsl-rs`
 five more by depending on them — DESIGN §8).
 
 Also verified: `cargo metadata` resolves the whole staged workspace for both
-lineages — 775 packages for ce, including the crates outside its closure that
+lineages — 775 packages for ce, including the crates outside the set that
 depend on renamed ones; every staged package keeps its original lib name
 (`bite-gpui` exports `gpui`, `bite-gp-platform` exports `gpui_platform`,
 `bite-gp-util` exports `util`); `pipeline/publish.py --dry-run` packages and compiles a
@@ -293,11 +293,11 @@ added, ce declares its path dependencies in each member instead of the workspace
 table, `[profile.dev.package]` lists package names that must not be rewritten,
 the version cannot be derived from a tag the checkout does not have, the checks
 were running with default features where the project checks with all of them, and
-crates *outside* the closure that depend on renamed ones break the whole
+crates *outside* the set that depend on renamed ones break the whole
 workspace even though they are not published.
 
 Not yet run: the compile checks locally (this host is at 98% disk and a full
-closure build needs tens of GB — CI runs them) and the wasm32 check for
+build of the set needs tens of GB — CI runs them) and the wasm32 check for
 `gpui_web` (DESIGN §10).
 
 ## Published

@@ -62,10 +62,11 @@ original = "gpui"
 
 ## 4. Which Crates
 
-The crate set is computed from the manifests, not from a list. `crates/gpui` (and
-`crates/gpui_parley`, which nothing depends on but which consumers want to
-select directly) are the roots; from there `.dist/pipeline/inventory.py` walks in-checkout
-path dependencies.
+The GPUI crates set — the crates a target depends on, reached by path
+dependencies — is computed from the manifests, not from a list. `crates/gpui`
+(and `crates/gpui_parley`, which nothing depends on but which consumers want to
+select directly) are the roots; from there `.dist/pipeline/inventory.py` walks
+in-checkout path dependencies.
 
 ### Discovery Mechanics
 
@@ -91,7 +92,7 @@ Measured over normal plus build reachability:
 | `bite_master` | 30 | 1.14 minus `media` |
 | `bite_ce_main` | 26 | CE's own `gpui_ce_*` set replaces the vendored Zed crates |
 
-Union across targets: **50 source packages**. The release line's crate set did not
+Union across targets: **50 source packages**. The release line's set did not
 change over the ten branches — 1.14 and 1.21.0-pre resolve to exactly the same
 31 crates, and `bite_master` is that set minus `media` — but verification re-measures
 per materialized worktree rather than assuming it.

@@ -20,20 +20,20 @@ than one per workflow, and a phase can also be run on its own:
 | action | what it is | cost |
 | --- | --- | --- |
 | `.github/actions/preflight` | the stage report, `cargo metadata`, and the two static packaging checks | seconds |
-| `.github/actions/code-checks` | clippy, and the closure's tests | minutes |
+| `.github/actions/code-checks` | clippy, and the tests of the GPUI crates set | minutes |
 | `.github/actions/build-checks` | the publish dry run, then the isolated build | minutes |
 
 The system packages a Linux leg links against are not a phase. They are the
-environment rather than a check, and a release compiles the same closure through
+environment rather than a check, and a release compiles the same set through
 `cargo publish`'s verification build — so they are in `.github/actions/build-env`,
 together with python and the pinned toolchain, which `verify.yml` and `release.yml`
-both prepare before they touch the closure. One definition, because when it was two
+both prepare before they touch the set. One definition, because when it was two
 the release's half was missing `fontconfig` and a build script panicked rather than
 failing usefully.
 
 They run cheapest first, so a crate that cannot be staged or a path that escapes
-its archive is reported in under a minute rather than after a closure's worth of
-compilation. That ordering is the point: the defect classes this project exists
+its archive is reported in under a minute rather than after compiling a whole set
+of crates. That ordering is the point: the defect classes this project exists
 to catch are the cheap ones to detect and the expensive ones to discover late.
 
 The scripts live in two directories: the pipeline that produces the stage in
@@ -46,10 +46,10 @@ name and add their own directory to `sys.path`.
 warnings` type-checks the same targets a plain `cargo check` would and adds the
 lints on top, and because clippy runs under a compiler wrapper that
 re-fingerprints the workspace, a check step ahead of it recompiled every crate in
-the closure for nothing. There is one step, and the lints are the reason it is
+the set for nothing. There is one step, and the lints are the reason it is
 worth having.
 
-**`--all-features` throughout.** The migration project checked the closure with
+**`--all-features` throughout.** The migration project checked the set with
 default features and with all of them, and only the latter compiles the code
 behind `bench-support` and `profiler`. With default features that code is
 reported dead, which is how verification first failed — on
@@ -59,7 +59,7 @@ reported dead, which is how verification first failed — on
 In order:
 
 1. `pipeline/targets.py --validate` and `pipeline/naming.py --verify` — the table
-   is well formed, and every closure crate has a name that no other crate needs
+   is well formed, and every crate in the set has a name that no other crate needs
    ([§12](release.md)). The workflow runs this before staging, not the action.
 2. `cargo metadata --format-version 1` — the whole workspace resolves. Cheap, and
    it is what caught the stale-version rename in [§7](staging.md) step 4. `check_reads.py`
@@ -87,8 +87,8 @@ In order:
    this on a lineage with nothing in it. The skip is narrow — an Apple build
    script that still calls cbindgen and is not recognised still fails, because
    passing there would lose this check's cover.
-5. `cargo clippy -p <native closure> --all-targets --all-features -- -D warnings`.
-6. `cargo test -p <tested closure> --all-features --lib --tests`.
+5. `cargo clippy -p <native crates> --all-targets --all-features -- -D warnings`.
+6. `cargo test -p <tested crates> --all-features --lib --tests`.
 7. `pipeline/publish.py --dry-run` — packages each crate and compiles it as the root of a
    build, which is the only check that the published artifact builds. Resolving a
    root's *dev*-dependencies is part of that, so a crate whose dev-dependencies
@@ -101,8 +101,8 @@ In order:
    dependencies and never its dev-dependencies. It is also the only check that
    fails when an archive cannot stand on its own. It compiles with `cargo check`
    and default features — the workspace-wide `--all-features` clippy pass has
-   already covered the code behind the non-default ones, and a closure's worth of
-   codegen is what does not fit on a runner.
+   already covered the code behind the non-default ones, and the codegen of a whole
+   set of crates is what does not fit on a runner.
 
 **Verification has to be able to see a crate that reads outside itself, and it could
 not.** `gpui_apple`'s build script fed cbindgen five shader sources located by
@@ -128,7 +128,7 @@ it cannot break the published artifact. The fonts `gpui_wgpu`'s tests and
 and they are why the distinction is drawn rather than the check being made
 stricter.
 
-The closure is passed as explicit `-p` flags rather than `--workspace`: the
+The set is passed as explicit `-p` flags rather than `--workspace`: the
 checkout carries all ~250 zed crates, and checking them is neither wanted nor
 affordable on every push. Withheld crates ([§8](staging.md)) are still checked —
 they build, they just cannot be published — so verification covers 55 of the 57
@@ -140,10 +140,10 @@ want of the second. ce's publish job installs nine packages, which was enough to
 `unable to find library -lX11-xcb` while linking `gpui_macros`'s `render_test`,
 which pulls the whole stack. zed keeps its Debian/Ubuntu list in `script/linux`,
 and that is the source of truth for the rest — minus its gtk and webkit entries,
-which are for editor crates the closure does not contain.
+which are for editor crates the set does not contain.
 
 **Verification is bounded by the runner, and two settings keep it inside that.**
-A debug build of the closure exhausted a runner's disk, and the linker died with
+A debug build of the set exhausted a runner's disk, and the linker died with
 a bus error — on Linux, the signal a process gets when the file-backed page it
 is writing to cannot be extended. So:
 

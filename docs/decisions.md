@@ -75,8 +75,8 @@ copyleft audit as a check rather than a measurement, both noted in [§9](staging
 
 ### 13.5 Crate Metadata and Ownership — **partly done**
 The crates need `description`, `keywords`, `categories`, `homepage`, and a
-`repository`. In the 1.14 closure, 18 of 31 have no description, 29 have no
-per-crate README (only `gpui` does), most set no `repository` at all and 3 still
+`repository`. In the 1.14 target's crates, 18 of 31 have no description, 29 have
+no per-crate README (only `gpui` does), most set no `repository` at all and 3 still
 point at `zed-industries/zed`.
 
 Done by staging: `pipeline/stage.py` writes `repository` as the bite-gpui URL on

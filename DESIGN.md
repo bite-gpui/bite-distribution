@@ -19,7 +19,7 @@ in a comment in `targets.toml`, and here. This file is the map.
 | Section | Document | Scope & Coverage |
 | --- | --- | --- |
 | §1–§2 | `DESIGN.md` | distribution requirements, strategy, governing invariants |
-| §3–§6 | [`docs/contract.md`](docs/contract.md) | target topologies, the crates a target resolves to, crate naming, versioning |
+| §3–§6 | [`docs/contract.md`](docs/contract.md) | target topologies, the GPUI crates set, crate naming, versioning |
 | §7–§9 | [`docs/staging.md`](docs/staging.md) | branch-to-tree transformation, dependency remapping, licensing |
 | §10 | [`docs/verification.md`](docs/verification.md) | staged-tree validation and the verification suite |
 | §11–§12 | [`docs/release.md`](docs/release.md) | publish ordering, registry rate limits, CI workflows |
@@ -43,7 +43,7 @@ crates.io, so a consumer names a dependency instead of vendoring a branch:
 bite_* branch
     │  inventory.py — walk the path dependencies (§4)
     ▼
-the crates the branch depends on
+the GPUI crates set
     │  naming.py — published name per package, lib name pinned (§5)
     ▼
 those crates, renamed

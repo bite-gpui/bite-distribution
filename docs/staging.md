@@ -11,10 +11,10 @@ dependency surgery it does, and the licences and provenance it writes.
 
 `pipeline/stage.py --target <name> --source <checkout>` rewrites a throwaway checkout of
 the target branch **in place**, and writes a `dist-stage.json` report beside it.
-It does not copy the closure into a synthetic workspace.
+It does not copy the GPUI crates set into a synthetic workspace.
 
-That is a deliberate choice with a measurement behind it: **zero** closure
-crates are referenced by a direct member path — every one of them is reached
+That is a deliberate choice with a measurement behind it: **zero** crates in
+the set are referenced by a direct member path — every one of them is reached
 through `[workspace.dependencies]` inheritance. A copy would therefore have to
 re-derive the entire workspace model (inherited `version`/`edition`/`lints`,
 per-target tables, `[patch]`) and would diverge from it silently the first time
@@ -24,9 +24,9 @@ it keeps cargo itself as the source of truth.
 
 1. **Materialize** a checkout of the branch tip (CI checks the branch out
    directly; locally, `git worktree add --detach .dist/wt/<target> <branch>`).
-2. **Measure** the closure with `pipeline/inventory.py`, and resolve the version from the
-   release tag at the branch tip ([§6](contract.md)).
-3. **Rename** each closure crate's `[package] name` — and **pin `[lib] name`**.
+2. **Measure** the GPUI crates set with `pipeline/inventory.py`, and resolve the
+   version from the release tag at the branch tip ([§6](contract.md)).
+3. **Rename** the `[package] name` of every crate in the set — and **pin `[lib] name`**.
    These crates declare `[lib] path` without a name, so their lib name is
    *derived from the package name*. Without this step `bite-gpui` exports crate
    `bite_gpui` and every `use gpui::…` in the ecosystem stops compiling. The
@@ -36,18 +36,17 @@ it keeps cargo itself as the source of truth.
    produced a dependency on 0.1.0 while the package became 1.21.0-pre. Cargo's
    resolver caught the mismatch across the whole workspace.
 5. **Raise `publish`** — drop the crate-level `publish = false` (11 of the 1.14
-   closure inherit zed's workspace default) and flip the workspace default to
-   true.
+   set inherit zed's workspace default) and flip the workspace default to true.
 6. **Rewrite every reference to a renamed crate**, in every manifest of the
-   checkout, not only the closure's. Cargo resolves the whole workspace, so a
+   checkout, not only the set's. Cargo resolves the whole workspace, so a
    crate that depends on a renamed one but is not itself published has to keep
    resolving: ce's `gpui_ce_elements`, `gpui_ce_tokio` and `gpui_ce_zed_util`
-   are outside its closure, and leaving them alone fails the workspace with
+   are outside the set, and leaving them alone fails the workspace with
    `no matching package named gpui-ce found`. The reference gains `package` (the
    published name) and `version` (the target version); a manifest outside the
-   closure gets that and nothing else — no provenance, no licence, no bump.
+   set gets that and nothing else — no provenance, no licence, no bump.
 7. **Replace git dependencies** that have a registry equivalent (§8), scoped to
-   the closure and to whichever manifest actually declares them.
+   the set and to whichever manifest actually declares them.
 8. **License and provenance** (§9).
 9. **Re-read the result and check it** (`verify_staged`): every renamed crate
    carries the right name, version and lib name; every dependency on one
@@ -61,7 +60,7 @@ versions, so the two scripts cannot disagree about what is being released.
 
 ## 8. Dependency Surgery
 
-Every external dependency in the closure was checked against crates.io. Git
+Every external dependency in the set was checked against crates.io. Git
 dependencies are replaced by registry versions where one exists; one has none.
 
 | Source Dependency | Source Git Repository | Registry Substitute | Status |
@@ -101,13 +100,13 @@ verification builds the git source while consumers get the registry one.
 **Per-target differences are real, not hypothetical.** `bite_v1.14.x` declares
 `async-tar` as registry `"0.6"`; 1.20.2, 1.21.0-pre and master all take it from a
 fork. A hard-coded substitution list would have been wrong for one group or the
-other; the closure scan finds this per target.
+other; measuring per target is what finds this.
 
 ### Transitive Withholding Mechanics (`wgsl-rs`)
 
 **`wgsl-rs` blocks four of ce's crates.** It is a non-optional dependency of
 `gpui_ce_render`, `gpui_ce_wgpu`, `gpui_ce_apple` and `gpui_ce_windows`, all of
-which are in ce's closure, and cargo refuses to publish a crate whose dependency
+which are in ce's set, and cargo refuses to publish a crate whose dependency
 has no version. Only `0.0.0-reserved` exists on crates.io, so there is nothing to
 substitute. Options, in preference order: ask upstream to publish; vendor it into
 the `bite-gpui` namespace with lib name `wgsl_rs` intact, so `use` sites are
@@ -170,7 +169,7 @@ removing the dependency so the published graph is Apache-only.
 What the stager does for every crate:
 
 - copies the licence text the manifest declares, from the repository root:
-  `LICENSE-APACHE` for Apache crates (7 of the 1.14 closure declare Apache
+  `LICENSE-APACHE` for Apache crates (7 of the 1.14 set declare Apache
   without carrying the file) and `LICENSE-GPL` for the GPL ones (`path` and
   `zlog` each lack one of the two);
 - writes a `NOTICE` for Apache crates naming the upstream project, the branch,
@@ -181,5 +180,5 @@ What the stager does for every crate:
 
 Not yet done, and worth deciding with [§13.4](decisions.md): per-file licence
 headers, and the copyleft audit as a *check* rather than a measurement. Today the
-GPL crates are reported by the closure scan (they show up in the stage report's
-`license` field) but nothing fails on them.
+GPL crates are recorded in the stage report's `license` field but nothing fails
+on them.

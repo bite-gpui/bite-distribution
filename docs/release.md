@@ -114,9 +114,9 @@ reservation of a name that must exist before anything may name it.
 
 `.github/workflows/ci.yml` — pull requests, pushes to `main`, and dispatch:
 
-- **table** validates `targets.toml`, then runs the naming rule against a real
-  closure per lineage, so a new crate that would land on a taken name fails long
-  before a release rather than during one;
+- **table** validates `targets.toml`, then runs the naming rule against a real set
+  of one target per lineage, so a new crate that would land on a taken name fails
+  long before a release rather than during one;
 - **lint** runs `checks/workflows.py`: actionlint over `.github/workflows`, and a
   pass over the `inputs:` and `outputs:` of the actions those workflows use. The
   second pass exists because actionlint does not read the `steps:` of a composite
@@ -151,7 +151,7 @@ almost the same.
 The isolated build unpacks the archives into `isolated/` inside the staged
 checkout, with `isolated/target` as its own target directory. That is
 deliberately outside `target/` — the directory the build cache is keyed on — so a
-second closure's worth of artifacts is never cached, and the directory is
+second, isolated set of artifacts is never cached, and the directory is
 disposable between runs.
 
 `.github/workflows/tag.yml` — the manual release step: dispatch it with a branch of
