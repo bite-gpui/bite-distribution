@@ -432,6 +432,16 @@ in `bench_context` and `profiler::hang`.
    finds the same class of defect statically from the archive; this one shows
    cbindgen's own message. It takes whichever crate feeds cbindgen on that branch
    — `gpui_macos` for 1.14 to 1.16, `gpui_apple` from 1.17.
+
+   Two details are about the harness rather than the crate, and both cost a CI run
+   to find. The generated crate declares the `runtime_shaders` feature and allows
+   the `unused` lint group, because removing the shader-compilation calls is what
+   makes the binding and the two functions dead, and the gates build with
+   `-D warnings` — four errors about our own edit. And a stage with *no* cbindgen
+   build script is a skip with a notice, not a failure: ce is built on 1.14, which
+   never had the step, so the gate runs this on a lineage with nothing in it. The
+   skip is narrow — an Apple build script that still calls cbindgen and is not
+   recognised still fails, because passing there would lose this check's cover.
 8. `publish.py --dry-run` — packages each crate and compiles it as the root of a
    build, which is the only check that the published artifact builds. Resolving a
    root's *dev*-dependencies is part of that, so a crate whose dev-dependencies
