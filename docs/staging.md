@@ -1,13 +1,13 @@
 # Staging
 
-§7–§9 of the [bite-gpui distribution specification](../DESIGN.md). Sections keep
+§7–§9 of the [bite-gpui distribution design](../DESIGN.md). Sections keep
 their numbers across all of these files, so `§6` means the same thing here, in
 the other chapters, and in `targets.toml`.
 
 How a branch is turned into a publishable tree: the algorithm, the
 dependency surgery it does, and the licences and provenance it writes.
 
-## 7. Staging algorithm
+## 7. Staging Algorithm
 
 `pipeline/stage.py --target <name> --source <checkout>` rewrites a throwaway checkout of
 the target branch **in place**, and writes a `dist-stage.json` report beside it.
@@ -59,7 +59,7 @@ it keeps cargo itself as the source of truth.
 The report is the handoff: `pipeline/publish.py` reads it for the order, names and
 versions, so the two scripts cannot disagree about what is being released.
 
-## 8. Dependency surgery
+## 8. Dependency Surgery
 
 Every external dependency in the closure was checked against crates.io. The
 closure needs git dependencies replaced by registry versions; one has no
@@ -140,7 +140,7 @@ One crate reaches outside `crates/`: `perf` lives in `tooling/perf` and is pulle
 in by `util_macros`. It is copied like any other crate and published as
 `bite-gp-perf`.
 
-## 9. Licensing and attribution
+## 9. Licensing and Attribution
 
 Measured across the 50-crate union: **44 Apache-2.0, 4 GPL-3.0-or-later, 2
 inherited from their workspace.**

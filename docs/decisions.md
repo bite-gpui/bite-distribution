@@ -1,6 +1,6 @@
 # Decisions
 
-§13 of the [bite-gpui distribution specification](../DESIGN.md). Sections keep
+§13 of the [bite-gpui distribution design](../DESIGN.md). Sections keep
 their numbers across all of these files, so `§6` means the same thing here, in
 the other chapters, and in `targets.toml`.
 
@@ -10,14 +10,14 @@ Each decision the design rested on, its status, and the evidence.
 
 Each heading carries its own status: decided, in force, or open.
 
-### 13.1 Where the project lives — **decided: `bite-gpui/distribution`**
+### 13.1 Where the Project Lives — **decided: `bite-gpui/distribution`**
 `.dist/` is ignored in the zed clone (like `.tools/`). It lives at
 `git@github.com:bite-gpui/distribution.git`, as its own repository, because
 publishing is a separate concern from the architecture work and its history
 should not be tangled with it. `.tools/` is likewise its own repository,
 `bite-gpui/tools`, since the migration scripts are a third concern again.
 
-### 13.2 Two namespaces — **decided: two**
+### 13.2 Two Namespaces — **decided: two**
 
 Settled: the ce transplant publishes as `bite-gp-ce-*` with `bite-gpui-ce` as its
 facade, and the branch lives in the main repository alongside the zed-lineage
@@ -47,7 +47,7 @@ ce's `release.yml` and `prerelease.yml` and this workflow would be publishing
 into one namespace, and would need the `registry-publish` concurrency group and
 one owner per name.
 
-### 13.3 What `bite_master` publishes as — **in force: the CalVer series**
+### 13.3 What `bite_master` Publishes As — **in force: the CalVer series**
 The CalVer rolling series, so a release requirement never resolves to a master
 snapshot; that is what `targets.toml` declares today. The alternative is a
 prerelease of the forthcoming release (`1.22.0-master.YYYYMMDD`), which makes
@@ -55,7 +55,7 @@ master sort newest but invents a release number that upstream may never use. If
 `bite_master` should simply not be published, that is also a clean answer — say
 so and it comes out of `targets.toml`.
 
-### 13.4 The GPL crates — **decided by shipping: published GPL-labelled**
+### 13.4 The GPL Crates — **decided by shipping: published GPL-labelled**
 `path`, `zlog`, `ztracing`, `ztracing_macro` are GPL-3.0-or-later and are in
 `gpui`'s dependency graph. The choice was to publish them GPL-labelled — it is
 what zed does, and GPL-3.0 is Apache-compatible — or to eliminate the dependency
@@ -73,7 +73,7 @@ copyleft audit as a check rather than a measurement, both noted in [§9](staging
 *(Verified 2026-09-25: `bite-gp-path`, `bite-gp-zlog`, `bite-gp-ztracing` and
 `bite-gp-ztracing-macro` are all published at `1.20.203`.)*
 
-### 13.5 Crate metadata and ownership — **partly done**
+### 13.5 Crate Metadata and Ownership — **partly done**
 The crates need `description`, `keywords`, `categories`, `homepage`, and a
 `repository`. In the 1.14 closure, 18 of 31 have no description, 29 have no
 per-crate README (only `gpui` does), most set no `repository` at all and 3 still

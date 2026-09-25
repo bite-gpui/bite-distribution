@@ -7,7 +7,7 @@ the other chapters, and in `targets.toml`.
 Publishing a staged tree in dependency order under crates.io's rate
 limits, and the workflows that run all of it.
 
-## 11. Publish order and rate limits
+## 11. Publish Order and Rate Limits
 
 `pipeline/publish.py --stage <dir>` reads the stage report, publishes in dependency
 order, and handles the three things a bare loop gets wrong. `--commands` prints

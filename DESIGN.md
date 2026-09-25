@@ -16,9 +16,9 @@ Section numbers are canonical across the documentation, the pipeline
 (`pipeline/`), and the target table (`targets.toml`): `§6` is `§6` in a chapter,
 in a comment in `targets.toml`, and here. This file is the map.
 
-| Section | Document | Scope |
+| Section | Document | Scope & Coverage |
 | --- | --- | --- |
-| §1–§2 | this file | distribution requirements, strategy, governing invariants |
+| §1–§2 | `DESIGN.md` | distribution requirements, strategy, governing invariants |
 | §3–§6 | [`docs/contract.md`](docs/contract.md) | target topologies, the dependency closure, crate naming, versioning |
 | §7–§9 | [`docs/staging.md`](docs/staging.md) | branch-to-tree transformation, dependency remapping, licensing |
 | §10 | [`docs/verification.md`](docs/verification.md) | staged-tree validation and the verification suite |
@@ -29,9 +29,10 @@ in a comment in `targets.toml`, and here. This file is the map.
 
 ### 1.1 Problem Statement
 
-The rearchitected gpui is maintained as twelve branches in one repository. A
-branch is not a dependency: it cannot be `cargo add`ed, and a `git`/`rev` pin is
-neither a version nor something the ecosystem's tooling can resolve.
+The rearchitected gpui is maintained as twelve branches in one repository,
+`git@github.com:bite-gpui/bite-gpui.git`. A branch is not a dependency: it cannot
+be `cargo add`ed, and a `git`/`rev` pin is neither a version nor something the
+ecosystem's tooling can resolve.
 
 ### 1.2 Target Resolution Model
 
