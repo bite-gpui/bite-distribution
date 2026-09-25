@@ -3,7 +3,7 @@
 | Attribute | Specification |
 | --- | --- |
 | **Status** | Active — as built 2026-09-25 |
-| **Published state** | The zed lineage is published: thirty-one crates at `1.20.203`. `bite_v1.21.0` is staged and clean, not released |
+| **Published state** | The Zed lineage is published: thirty-one crates at `1.20.203`, and `bite_v1.21.0` is part-published — a release resumes with `--only` ([§12](docs/release.md)) |
 | **Source specification** | `targets.toml`, verified 2026-09-25 |
 | **Registry** | crates.io |
 
@@ -29,7 +29,7 @@ in a comment in `targets.toml`, and here. This file is the map.
 
 ### 1.1 Problem Statement
 
-The rearchitected gpui is maintained as twelve branches in one repository,
+The rearchitected GPUI is maintained as twelve branches in one repository,
 `git@github.com:bite-gpui/bite-gpui.git`. A branch is not a dependency: it cannot
 be `cargo add`ed, and a `git`/`rev` pin is neither a version nor something the
 ecosystem's tooling can resolve.
@@ -56,10 +56,10 @@ crates.io
 ```
 
 ```toml
-# a zed-lineage retarget, tracking upstream zed 1.20
+# a Zed-lineage retarget, tracking upstream Zed 1.20
 bite-gpui = "1.20"
 
-# the community-edition transplant
+# the Community Edition (CE) transplant
 bite-gpui-ce = "0.20260922.1"
 ```
 
@@ -73,9 +73,9 @@ The shape comes from two references.
   establishes the mechanism: walk the path-dependency closure, remap packages,
   prune what cannot be published, aggregate licences, validate with `cargo
   publish --dry-run`, and publish resumably. The one substantive change here is
-  the input — gpui-kit walks a zed *commit*, this walks the repository's own
+  the input — gpui-kit walks a Zed *commit*, this walks the repository's own
   `bite_*` branches.
-- **Versioning — `iamnbutler/gpui-unofficial`.** It publishes zed releases as
+- **Versioning — `iamnbutler/gpui-unofficial`.** It publishes Zed releases as
   `gpui-unofficial` (plus `*-gpui-unofficial` helpers), and its sequence —
   `1.20.2` stable, `1.21.0-pre` newest — is the precedent [§6](docs/contract.md)
   follows.
@@ -116,9 +116,9 @@ check that enforces it; one of them is not enforced at all, and says so.
 
 ### Invariant 3 — Lineage Namespace Isolation
 
-- **Rule.** The zed-lineage retarget and the community-edition transplant contain
-  *different code under the same upstream crate names*: ce's `gpui_platform`
-  carries ce's surface, the 1.14 retarget carries 1.14's.
+- **Rule.** The Zed-lineage retarget and the Community Edition (CE) transplant
+  contain *different code under the same upstream crate names*: CE's
+  `gpui_platform` carries CE's surface, the 1.14 retarget carries 1.14's.
 - **Enforcement.** `naming.py --verify` fails a published name that two packages,
   or two lineages, would both claim ([§10](docs/verification.md)); the families
   themselves are [§5](docs/contract.md)'s.

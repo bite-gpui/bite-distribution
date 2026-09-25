@@ -16,31 +16,31 @@ Twelve targets, one per branch. `.dist/targets.toml` is the source of truth and
 
 | Target Branch | Lineage | Publishes As | Upstream | Role |
 | --- | --- | --- | --- | --- |
-| `bite_v1.14.x` | zed | `bite-gp-*` | `1.14.2` | retarget release branch |
-| `bite_v1.15.x` | zed | `bite-gp-*` | `1.15.1` | retarget release branch |
-| `bite_v1.16.x` | zed | `bite-gp-*` | `1.16.3` | retarget release branch |
-| `bite_v1.17.x` | zed | `bite-gp-*` | `1.17.2` | retarget release branch |
-| `bite_v1.18.x` | zed | `bite-gp-*` | `1.18.1` | retarget release branch |
-| `bite_v1.19.x` | zed | `bite-gp-*` | `1.19.2` | retarget release branch |
-| `bite_v1.20.2` | zed | `bite-gp-*` | `1.20.2` | retarget release branch |
-| `bite_v1.21.0-pre` | zed | `bite-gp-*` | `1.21.0-pre` | retarget preview branch |
-| `bite_v1.21.0` | zed | `bite-gp-*` | `1.21.0` | retarget release branch |
-| `bite_v1.22.0-pre` | zed | `bite-gp-*` | `1.22.0-pre` | retarget preview branch |
-| `bite_master` | zed | `bite-gp-*` | — (rolling) | head tracking branch |
-| `bite_ce_main` | ce | `bite-gp-ce-*`, `bite-gpui-ce` | — (rolling) | community-edition transplant |
+| `bite_v1.14.x` | Zed | `bite-gp-*` | `1.14.2` | retarget release branch |
+| `bite_v1.15.x` | Zed | `bite-gp-*` | `1.15.1` | retarget release branch |
+| `bite_v1.16.x` | Zed | `bite-gp-*` | `1.16.3` | retarget release branch |
+| `bite_v1.17.x` | Zed | `bite-gp-*` | `1.17.2` | retarget release branch |
+| `bite_v1.18.x` | Zed | `bite-gp-*` | `1.18.1` | retarget release branch |
+| `bite_v1.19.x` | Zed | `bite-gp-*` | `1.19.2` | retarget release branch |
+| `bite_v1.20.2` | Zed | `bite-gp-*` | `1.20.2` | retarget release branch |
+| `bite_v1.21.0-pre` | Zed | `bite-gp-*` | `1.21.0-pre` | retarget preview branch |
+| `bite_v1.21.0` | Zed | `bite-gp-*` | `1.21.0` | retarget release branch |
+| `bite_v1.22.0-pre` | Zed | `bite-gp-*` | `1.22.0-pre` | retarget preview branch |
+| `bite_master` | Zed | `bite-gp-*` | — (rolling) | head tracking branch |
+| `bite_ce_main` | CE | `bite-gp-ce-*`, `bite-gpui-ce` | — (rolling) | Community Edition transplant |
 
-`upstream` is the zed release a branch retargets, recorded for provenance. The
+`upstream` is the Zed release a branch retargets, recorded for provenance. The
 published version follows from it and from the target's `amendment` (§6), so
 neither is repeated here: `pipeline/targets.py --tags` prints the current tag and
 version for every target, and that command — not this table — is what a release
 reads. *(Verified 2026-09-25 against `targets.toml`.)*
 
 All twelve live in one repository, `git@github.com:bite-gpui/bite-gpui.git`. They share
-a common ancestor — ce is a fork of zed, not a separate lineage — but they have
+a common ancestor — CE is a fork of Zed, not a separate lineage — but they have
 diverged since, so what a target publishes differs even where the crate names are
 the same. That is why the table declares a lineage per target instead of
-inferring one from the remote: `bite_ce_main` forked at the community edition's
-baseline and `bite_master` descends from zed's `main` rather than from any
+inferring one from the remote: `bite_ce_main` forked at the Community Edition's
+baseline and `bite_master` descends from Zed's `main` rather than from any
 release. One repository also means the workflows need a read token for one
 repository, and the naming check needs two checkouts of it at two refs rather
 than checkouts of two repositories.
@@ -73,7 +73,7 @@ Two things make this less trivial than it sounds, and both are handled:
 
 - **The workspace `members` list is not complete.** `crates/gpui_authoring`,
   `crates/gpui_engine`, `crates/gpui_engine_default`, `crates/gpui_apple` and
-  others are absent from zed's root manifest. Cargo admits them because they are
+  others are absent from Zed's root manifest. Cargo admits them because they are
   path dependencies of members, so discovery follows path edges instead of
   trusting the list.
 - **Inherited paths are workspace-root relative.** `gpui = { path = "crates/gpui" }`
@@ -89,7 +89,7 @@ Closures measured over normal plus build reachability:
 | --- | --- | --- |
 | `bite_v1.14.x` | 31 | the release line's set, which the other nine share: `media`, `sum_tree`, `zlog` included |
 | `bite_master` | 30 | 1.14 minus `media` |
-| `bite_ce_main` | 26 | ce's own `gpui_ce_*` set replaces the vendored zed crates |
+| `bite_ce_main` | 26 | CE's own `gpui_ce_*` set replaces the vendored Zed crates |
 
 Union across targets: **50 source packages**. The release-line closure did not
 change over the ten branches — 1.14 and 1.21.0-pre resolve to exactly the same
@@ -98,7 +98,7 @@ per materialized worktree rather than assuming it.
 
 ## 5. Published Names
 
-The zed lineage owns the short names.
+The Zed lineage owns the short names.
 
 | Source Package | Published Package Name | Library Target Name (`[lib] name`) |
 | --- | --- | --- |
@@ -107,24 +107,24 @@ The zed lineage owns the short names.
 | anything else | `bite-gp-<name>` | unchanged |
 | `gpui_util` | `bite-gp-gpui-util` | `gpui_util` |
 
-The ce lineage prefixes `ce`, so a name never lies about which code it contains:
+The CE lineage prefixes `ce`, so a name never lies about which code it contains:
 
 | Source Package | Published Package Name |
 | --- | --- |
 | `gpui-ce` (the facade) | `bite-gpui-ce` |
-| `gpui_ce_X` (ce's own crate) | `bite-gp-ce-X` |
+| `gpui_ce_X` (CE's own crate) | `bite-gp-ce-X` |
 | `gpui_X` (the reference's crate) | `bite-gp-ce-gpui-X` |
 
 ### Disambiguation & Namespace Isolation Mechanics
 
-- **Why ce's two families are spelled differently:** ce contains *both*
-  `gpui_platform` (the reference's leaf) and `gpui_ce_platform` (ce's backend
+- **Why CE's two families are spelled differently:** CE contains *both*
+  `gpui_platform` (the reference's leaf) and `gpui_ce_platform` (CE's backend
   selector). Stripping `gpui_` from both would collide on `platform`. Keeping the
-  `gpui` token on the reference's crates and dropping the redundant `ce` from ce's
+  `gpui` token on the reference's crates and dropping the redundant `ce` from CE's
   own crates is the only split that stays mechanical and collision-free.
-- **Why `gpui_util` is the single exception:** the union contains both zed's
+- **Why `gpui_util` is the single exception:** the union contains both Zed's
   `util` and `gpui_util`, and the stripping rule sends both to `bite-gp-util`.
-  zed's `util` is the upstream-named crate and keeps the short name; `gpui_util`
+  Zed's `util` is the upstream-named crate and keeps the short name; `gpui_util`
   keeps its full spelling. `--verify` re-derives this on every run rather than
   trusting the comment.
 
@@ -132,7 +132,7 @@ The ce lineage prefixes `ce`, so a name never lies about which code it contains:
 collisions, and no name claimed by two lineages. `bite-gpui` was unclaimed when
 this was written and is now taken by the first release of this pipeline;
 `bite-gpui-ce` is still unclaimed. `gpui` itself is neither — it is owned by
-upstream zed and has been published seven times. That is the strongest argument
+upstream Zed and has been published seven times. That is the strongest argument
 for the prefix: the name being reimplemented is already taken, by the project
 being reimplemented. *(Verified 2026-09-25: `gpui` has exactly seven versions —
 three yanked — and its owners are `zed-industries`; `bite-gpui` is at `1.20.203`;
@@ -160,7 +160,7 @@ patch of 100 or more, an amendment outside 0..99).
 
 ### Git Tip-Tagging Mechanics
 
-**The version comes from a tag on the target branch, not from zed's tag.** Every
+**The version comes from a tag on the target branch, not from Zed's tag.** Every
 release target's tip carries an annotated tag named `bite_` plus the published
 version:
 
@@ -177,7 +177,7 @@ This replaced an earlier design that derived the version from the upstream
 `v1.20.2` tag's presence on the branch's ancestry. That failed in CI for a real
 reason worth recording: `actions/checkout` fetches neither tags nor history at
 the default depth, so the tag was simply absent, and even with
-`fetch-depth: 0` the derivation would have needed the full history of a zed-sized
+`fetch-depth: 0` the derivation would have needed the full history of a Zed-sized
 fork on every job. A tag **at the tip** needs no history at all — `git tag
 --points-at HEAD` compares OIDs — so a depth-1 checkout suffices and the
 workflow fetches only `refs/tags/bite_*`.
@@ -203,13 +203,13 @@ Four consequences, all deliberate:
    branch is re-tagged: the fix is `amendment += 1`, push, tag. Rolling targets
    pay nothing, because they are dated at staging time. That is the intended
    price of the version being a contract rather than a label, and it is the thing
-   to weigh when verification finds a source-level defect. ce's broken example was
+   to weigh when verification finds a source-level defect. CE's broken example was
    worth fixing under a rolling branch, where it cost nothing; the same fix on a
    release branch would want to be certain, because it is nine tags.
 
 `1.21.0-pre` keeps its prerelease tag, because the release it previews is what
 `1.21.0` will be; an amendment appends a numeric identifier (`1.21.0-pre.1`),
-which semver orders above the bare prerelease.
+which SemVer orders above the bare prerelease.
 
 ### Rolling Branch CalVer Scheme
 
@@ -221,7 +221,7 @@ publish untagged. `N` is the amendment slot. The `0.*` rolling series and the
 requirement like `bite-gpui = "1.20"` never silently resolves to a master
 snapshot. The cost is that `*` prefers a release over the tip — see [§13.3](decisions.md).
 
-ce has a scheme of its own in flight — its prerelease workflow publishes
+CE has a scheme of its own in flight — its prerelease workflow publishes
 `<committed major + 1>.0.0-alpha.N`, so `gpui-ce` is on the `1.0.0-alpha.N` line
 while its committed version is 0.2.2. Because the two lineages do not share crate
 names (§5, [§13.2](decisions.md)), this project does not have to interoperate with
