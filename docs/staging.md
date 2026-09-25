@@ -40,7 +40,7 @@ it keeps cargo itself as the source of truth.
    true.
 6. **Rewrite every reference to a renamed crate**, in every manifest of the
    checkout, not only the closure's. Cargo resolves the whole workspace, so a
-   crate that depends on one we renamed but is not itself published has to keep
+   crate that depends on a renamed one but is not itself published has to keep
    resolving: ce's `gpui_ce_elements`, `gpui_ce_tokio` and `gpui_ce_zed_util`
    are outside its closure, and leaving them alone fails the workspace with
    `no matching package named gpui-ce found`. The reference gains `package` (the
@@ -107,8 +107,8 @@ other; the closure scan finds this per target.
 which are in ce's closure, and cargo refuses to publish a crate whose dependency
 has no version. Only `0.0.0-reserved` exists on crates.io, so there is nothing to
 substitute. Options, in preference order: ask upstream to publish; vendor it into
-our namespace with lib name `wgsl_rs` intact, so `use` sites are unchanged; or
-leave ce unshippable, which is the current state.
+the `bite-gpui` namespace with lib name `wgsl_rs` intact, so `use` sites are
+unchanged; or leave ce unshippable, which is the current state.
 
 What the pipeline does about it is deliberately not "fail":
 

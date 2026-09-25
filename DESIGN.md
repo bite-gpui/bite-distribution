@@ -29,10 +29,9 @@ in a comment in `targets.toml`, and here. This file is the map.
 
 ### 1.1 Problem Statement
 
-The rearchitected gpui is maintained as twelve branches in one repository. That
-is useful to us and useless to anyone else: a branch cannot be `cargo add`ed, and
-a `git`/`rev` pin is neither a version nor something the ecosystem's tooling can
-resolve.
+The rearchitected gpui is maintained as twelve branches in one repository. A
+branch is not a dependency: it cannot be `cargo add`ed, and a `git`/`rev` pin is
+neither a version nor something the ecosystem's tooling can resolve.
 
 ### 1.2 Target Resolution Model
 

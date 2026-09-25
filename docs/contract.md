@@ -121,10 +121,10 @@ the comment.
 
 Verified: 57 distinct (lineage, package) pairs → 57 names, no collisions, and no
 name claimed by two lineages. `bite-gpui` was unclaimed when this was written and
-is now taken by our own first release; `bite-gpui-ce` is still unclaimed. `gpui`
-itself is neither — it is owned by upstream zed and has been published seven
-times. That is the strongest argument for the prefix: the name we are
-reimplementing is already taken, by the people we are reimplementing.
+is now taken by the first release of this pipeline; `bite-gpui-ce` is still
+unclaimed. `gpui` itself is neither — it is owned by upstream zed and has been
+published seven times. That is the strongest argument for the prefix: the name
+being reimplemented is already taken, by the project being reimplemented.
 *(Verified 2026-09-25: `gpui` has exactly seven versions — three yanked — and its
 owners are `zed-industries`; `bite-gpui` is at `1.20.203`; `bite-gpui-ce` 404s.)*
 
@@ -143,7 +143,7 @@ anything close to a hundred amendments. `pipeline/targets.py` refuses a table th
 not fit the scheme (an upstream patch of 100 or more, an amendment outside
 0..99).
 
-**The version comes from a tag on our branch, not from zed's tag.** Every
+**The version comes from a tag on the target branch, not from zed's tag.** Every
 release target's tip carries an annotated tag named `bite_` plus the published
 version:
 

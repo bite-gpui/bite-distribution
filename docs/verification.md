@@ -71,11 +71,12 @@ In order:
    to find. The generated crate declares the `runtime_shaders` feature and allows
    the `unused` lint group, because removing the shader-compilation calls is what
    makes the binding and the two functions dead, and the checks build with
-   `-D warnings` — four errors about our own edit. And a stage with *no* cbindgen
-   build script is a skip with a notice, not a failure: ce is built on 1.14, which
-   never had the step, so verification runs this on a lineage with nothing in it. The
-   skip is narrow — an Apple build script that still calls cbindgen and is not
-   recognised still fails, because passing there would lose this check's cover.
+   `-D warnings` — four errors caused by the transformation rather than by the
+   crate. And a stage with *no* cbindgen build script is a skip with a notice, not
+   a failure: ce is built on 1.14, which never had the step, so verification runs
+   this on a lineage with nothing in it. The skip is narrow — an Apple build
+   script that still calls cbindgen and is not recognised still fails, because
+   passing there would lose this check's cover.
 5. `cargo clippy -p <native closure> --all-targets --all-features -- -D warnings`.
 6. `cargo test -p <tested closure> --all-features --lib --tests`.
 7. `pipeline/publish.py --dry-run` — packages each crate and compiles it as the root of a

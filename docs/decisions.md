@@ -33,8 +33,8 @@ is exactly the new layer: `gpui_ce_types`, `gpui_ce_apple`, `gpui_ce_render`,
 and the reference's `gpui_types`, `gpui_platform`, `gpui_engine`,
 `gpui_engine_default`, `gpui_authoring`, `gpui_runtime`, `gpui_parley`.
 
-So ce is not an unpublished fork sitting next to us; it is a fork with a live
-distribution. Sharing one namespace with the zed lineage would put two different
+So ce is not an unpublished fork adjacent to this project; it is a fork with a
+live distribution. Sharing one namespace with the zed lineage would put two different
 `gpui_platform`s under one crate name, told apart only by whether the version
 looks like a zed release, and a version range spanning both would silently mix
 them. The cost is that a ce user writes `bite-gpui-ce` instead of `bite-gpui`,
@@ -87,8 +87,8 @@ account and token exist; the first release used them.
 Not done: a description that names the upstream origin. Because the rule is
 "fill only if empty", the facade still reads *"Zed's GPU-accelerated UI
 framework"* with nothing to say it is a build of zed v1.20.2; nor are
-`keywords`/`categories`/`homepage` ours rather than the source's (`homepage` is
-`https://gpui.rs`), nor are there per-crate READMEs.
+`keywords`/`categories`/`homepage` set by this pipeline rather than inherited from
+the source (`homepage` is `https://gpui.rs`), nor are there per-crate READMEs.
 
 *(Verified 2026-09-25 against the published `bite-gpui` 1.20.203 and
 `pipeline/stage.py`.)*
