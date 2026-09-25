@@ -19,7 +19,7 @@ in a comment in `targets.toml`, and here. This file is the map.
 | Section | Document | Scope & Coverage |
 | --- | --- | --- |
 | §1–§2 | `DESIGN.md` | distribution requirements, strategy, governing invariants |
-| §3–§6 | [`docs/contract.md`](docs/contract.md) | target topologies, the dependency closure, crate naming, versioning |
+| §3–§6 | [`docs/contract.md`](docs/contract.md) | target topologies, the crates a target resolves to, crate naming, versioning |
 | §7–§9 | [`docs/staging.md`](docs/staging.md) | branch-to-tree transformation, dependency remapping, licensing |
 | §10 | [`docs/verification.md`](docs/verification.md) | staged-tree validation and the verification suite |
 | §11–§12 | [`docs/release.md`](docs/release.md) | publish ordering, registry rate limits, CI workflows |
@@ -41,12 +41,12 @@ crates.io, so a consumer names a dependency instead of vendoring a branch:
 
 ```
 bite_* branch
-    │  inventory.py — walk the path-dependency closure (§4)
+    │  inventory.py — walk the path dependencies (§4)
     ▼
-closure of source packages
+the crates the branch depends on
     │  naming.py — published name per package, lib name pinned (§5)
     ▼
-renamed closure
+those crates, renamed
     │  stage.py — versions, dependency rewrites, licences, provenance (§7–§9)
     ▼
 staged tree ──► verification (§10)
@@ -69,8 +69,8 @@ They then get the same library the branch would have given them.
 
 The shape comes from two references.
 
-- **Closure extraction — `longbridge/gpui-kit`.** Its `script/bump-gpui.ts`
-  establishes the mechanism: walk the path-dependency closure, remap packages,
+- **GPUI crate extraction — `longbridge/gpui-kit`.** Its `script/bump-gpui.ts`
+  establishes the mechanism: follow the path dependencies, remap packages,
   prune what cannot be published, aggregate licences, validate with `cargo
   publish --dry-run`, and publish resumably. The one substantive change here is
   the input — gpui-kit walks a Zed *commit*, this walks the repository's own

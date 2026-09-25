@@ -1,9 +1,9 @@
 # bite-gpui distribution
 
 Publishes the `bite_*` gpui branches as installable crates: for each target
-branch, carve the path-dependency closure out of the monorepo, rename the
-packages, and release them to crates.io as `bite-gpui` / `bite-gp-*` (zed
-lineage) and `bite-gpui-ce` / `bite-gp-ce-*` (community-edition lineage).
+branch, extract the crates it depends on out of the monorepo, rename them, and
+release them to crates.io as `bite-gpui` / `bite-gp-*` (zed lineage) and
+`bite-gpui-ce` / `bite-gp-ce-*` (community-edition lineage).
 
 The design is the [architecture specification](DESIGN.md), which is the map: the
 chapters are in `docs/`, and they keep their section numbers, so `§6` is `§6`

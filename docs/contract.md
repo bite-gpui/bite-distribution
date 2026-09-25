@@ -62,7 +62,7 @@ original = "gpui"
 
 ## 4. Which Crates
 
-The closure is computed from the manifests, not from a list. `crates/gpui` (and
+The crate set is computed from the manifests, not from a list. `crates/gpui` (and
 `crates/gpui_parley`, which nothing depends on but which consumers want to
 select directly) are the roots; from there `.dist/pipeline/inventory.py` walks in-checkout
 path dependencies.
@@ -83,7 +83,7 @@ Two things make this less trivial than it sounds, and both are handled:
 
 ### Measured Extracted Crates
 
-Closures measured over normal plus build reachability:
+Measured over normal plus build reachability:
 
 | Target | Crates | Composition & Notes |
 | --- | --- | --- |
@@ -91,7 +91,7 @@ Closures measured over normal plus build reachability:
 | `bite_master` | 30 | 1.14 minus `media` |
 | `bite_ce_main` | 26 | CE's own `gpui_ce_*` set replaces the vendored Zed crates |
 
-Union across targets: **50 source packages**. The release-line closure did not
+Union across targets: **50 source packages**. The release line's crate set did not
 change over the ten branches — 1.14 and 1.21.0-pre resolve to exactly the same
 31 crates, and `bite_master` is that set minus `media` — but verification re-measures
 per materialized worktree rather than assuming it.
