@@ -1,4 +1,4 @@
-# Release
+# Release & CI Workflows
 
 §11–§12 of the [bite-gpui distribution design](../DESIGN.md). Sections keep
 their numbers across all of these files, so `§6` means the same thing here, in
@@ -112,7 +112,18 @@ reservation of a name that must exist before anything may name it.
 
 ## 12. CI
 
-`.github/workflows/ci.yml` — pull requests, pushes to `main`, and dispatch:
+### The Workflows
+
+| workflow | runs on | what it does |
+| --- | --- | --- |
+| `ci.yml` | pull requests, pushes to `main`, dispatch | validate the table and the naming rule, lint the CI wiring, plan the matrix, then stage and verify one target per lineage |
+| `verify.yml` | dispatch, or called by `ci.yml` | stage one target and run the checks over it, and leave the receipt a release reads |
+| `tag.yml` | dispatch | resolve a branch to the tag it must carry, push it, and dispatch `release.yml` |
+| `release.yml` | dispatch | require that receipt, then stage and publish inside the `crates-io` environment |
+
+### `ci.yml`
+
+Pull requests, pushes to `main`, and dispatch:
 
 - **table** validates `targets.toml`, then runs the naming rule against a real set
   of one target per lineage, so a new crate that would land on a taken name fails
@@ -154,9 +165,10 @@ deliberately outside `target/` — the directory the build cache is keyed on —
 second, isolated set of artifacts is never cached, and the directory is
 disposable between runs.
 
-`.github/workflows/tag.yml` — the manual release step: dispatch it with a branch of
-the source repository and it resolves the target, derives the tag, pushes it, and
-dispatches `release.yml`.
+### `tag.yml`
+
+The manual release step: dispatch it with a branch of the source repository and it
+resolves the target, derives the tag, pushes it, and dispatches `release.yml`.
 
 Both of those workflows' dispatch inputs are `choice` lists of the source
 repository's branches, not free text, and `pipeline/targets.py --validate` compares them
@@ -188,7 +200,9 @@ makes idempotent by skipping what already landed. A report-only run exits zero
 whatever it finds — checking is an answer, not a failure — and an exit status that
 refuses belongs only to a run that was asked to push.
 
-`.github/workflows/release.yml` — dispatch only. It takes the target, a
+### `release.yml`
+
+Dispatch only. It takes the target, a
 confirmation input that must repeat it for a real publish, and `dry_run`
 defaulting to true, which makes it the dry-run path as well, and the only way to
 release a rolling target: `bite_master` and `bite_ce_main` publish on the CalVer
