@@ -42,8 +42,9 @@ checks/          what a staged tree must pass, plus one check on the repository
   test_isolated.py     each tarball compiles with no siblings, as crates.io sees it
   workflows.py         the CI wiring: actionlint over the workflows, and a pass over
                        the actions' own inputs and outputs
-.github/         ci.yml, verify.yml, tag.yml, release.yml, actions/verify/ (over
-                 linux-deps, preflight, code-checks and build-checks)
+.github/         ci.yml, verify.yml, tag.yml, release.yml, actions/verify/
+                 (over preflight, code-checks and build-checks) and
+                 actions/build-env/ (the system packages, python, toolchain)
 targets.toml     the twelve target branches, the table the pipeline reads
 docs/            the design by chapter: contract (§3–§6), staging (§7–§9),
                  verification (§10), release (§11–§12), decisions (§13)
@@ -215,9 +216,13 @@ whole of it; `pipeline/targets.py --for-tag` is the lookup it would need.
   request stages, and dispatching it directly is how a target is verified before a
   release. A dispatched run also uploads `verified-<target>-<version>`, the receipt
   `release.yml` reads.
-- `.github/actions/verify/action.yml` — the four phase actions `verify.yml` runs,
-  cheapest first: `linux-deps` (the system packages a Linux leg
-  links against), `preflight` (the stage report, `cargo metadata`, and the two
+- `.github/actions/build-env/action.yml` — what compiling the closure needs, in
+  one place: the Linux system packages, python 3.13 and the pinned toolchain. Both
+  `verify.yml` and the release job prepare it, which is the point — `cargo publish`
+  verifies a release by building the packaged crate as the root of its own build,
+  so the release job compiles the closure too.
+- `.github/actions/verify/action.yml` — the three phase actions `verify.yml` runs,
+  cheapest first: `preflight` (the stage report, `cargo metadata`, and the two
   static packaging checks — `checks/check_reads.py` and the Apple check,
   `checks/apple_build_check.py`, where the lineage has one), `code-checks` (clippy
   `-D warnings`, then the closure's tests), and `build-checks` (the publish dry

@@ -1,6 +1,6 @@
 # Verification
 
-§10 of the [bite-gpui distribution specification](../DESIGN.md). Sections keep
+§10 of the [bite-gpui distribution design](../DESIGN.md). Sections keep
 their numbers across all of these files, so `§6` means the same thing here, in
 the other chapters, and in `targets.toml`.
 
@@ -14,15 +14,22 @@ definition of what verifying a target means, dispatched to verify on demand and
 called by `ci.yml` for the targets a pull request stages. A dispatched run also
 leaves a receipt — `verified-<target>-<version>`, the stage report itself — which
 is what `release.yml` requires before it will publish ([§11](release.md)). It is
-one entry point over four actions, so there is one copy of the sequence rather
+one entry point over three actions, so there is one copy of the sequence rather
 than one per workflow, and a phase can also be run on its own:
 
 | action | what it is | cost |
 | --- | --- | --- |
-| `.github/actions/linux-deps` | the system packages a Linux leg links against | seconds |
 | `.github/actions/preflight` | the stage report, `cargo metadata`, and the two static packaging checks | seconds |
 | `.github/actions/code-checks` | clippy, and the closure's tests | minutes |
 | `.github/actions/build-checks` | the publish dry run, then the isolated build | minutes |
+
+The system packages a Linux leg links against are not a phase. They are the
+environment rather than a check, and a release compiles the same closure through
+`cargo publish`'s verification build — so they are in `.github/actions/build-env`,
+together with python and the pinned toolchain, which `verify.yml` and `release.yml`
+both prepare before they touch the closure. One definition, because when it was two
+the release's half was missing `fontconfig` and a build script panicked rather than
+failing usefully.
 
 They run cheapest first, so a crate that cannot be staged or a path that escapes
 its archive is reported in under a minute rather than after a closure's worth of
