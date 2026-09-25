@@ -674,18 +674,27 @@ deliberately outside `target/` — the directory the build cache is keyed on —
 second closure's worth of artifacts is never cached, and the directory is
 disposable between runs.
 
-`.github/workflows/tag.yml` — the manual release step, and the convenient way in:
-dispatch it with a `bite_*` branch and it resolves the target, derives the tag,
-pushes it, and dispatches `release.yml`.
+`.github/workflows/tag.yml` — the manual release step: dispatch it with a branch of
+the source repository and it resolves the target, derives the tag, pushes it, and
+dispatches `release.yml`.
 
-It has to join the two halves explicitly, because a tag pushed with a
-repository's own `GITHUB_TOKEN` does not start another workflow run — that is
-GitHub's recursion rule, not a choice — so the publish has to be dispatched. A tag
-pushed *by hand*, by contrast, does start one through `release.yml`'s trigger,
-which is why that trigger stays: `tag.yml` is the self-documenting path, not the
-only one. The two cannot double-publish: the token-pushed tag does not cascade, a
-hand-pushed one does, and either way the runs are serialised by
-`registry-publish` and skip versions that already exist.
+Both of those workflows' dispatch inputs are `choice` lists of the source
+repository's branches, not free text, and `targets.py --validate` compares them
+against the table: GitHub fills a dispatch dropdown from the workflow file and from
+nothing that can read `targets.toml`, so the list is the one part of the table that
+has to be written twice, and a target added to one and not the other would be a
+target nobody can select. The validation runs wherever `--validate` does, which
+includes the `table` job of `ci.yml`.
+
+It has to dispatch the publish rather than let a trigger do it, for two reasons.
+The narrower one is GitHub's recursion rule: a tag pushed with a repository's own
+`GITHUB_TOKEN` does not start another workflow run. The one that settles it is
+which repository this is — the `bite_*` tags live in the *source* repository, and
+this workflow lives here, so a `push: tags` trigger would be watching the wrong
+repository and could never fire at all. `tag.yml` exists so the tag ends up in the
+right place and the release starts anyway; release-on-tag would mean putting the
+trigger in the source repository, where the tags are, dispatching this workflow,
+and `--for-tag` is the lookup it would need.
 
 `tag_release.py` carries the judgement, so it is testable without CI: it resolves
 the branch to its target, computes the version from the table, asks the *remote*
@@ -697,27 +706,19 @@ was released, and the fix there is an `amendment` bump (§6). A report-only run
 exits zero whatever it finds — checking is an answer, not a failure — and an
 exit status that refuses belongs only to a run that was asked to push.
 
-`.github/workflows/release.yml` — two ways in.
-
-A **tag push** is the release act: `bite_1.21.0` releases `bite_v1.21.0`.
-`targets.py --for-tag` resolves the tag back to its target, because the table
-already computes the tag each release target must carry — so the workflow never
-parses a tag, and a tag cannot name a version that no target declares. Staging
-then refuses to run unless the branch tip carries exactly that tag, which is what
-makes "the tag is the version" a check rather than a convention.
-
-A **dispatch** takes the target name, a confirmation input that must repeat it
-for a real publish, and `dry_run` defaulting to true. It is the dry-run path, and
-the only way to release a rolling target: `bite_master` and `bite_ce_main`
-publish on the CalVer series, so both lineages could push a tag of the same name
-and the tag would not say which branch meant it. `--for-tag` refuses such a tag
-with that reason rather than guessing.
+`.github/workflows/release.yml` — dispatch only. It takes the target, a
+confirmation input that must repeat it for a real publish, and `dry_run`
+defaulting to true, which makes it the dry-run path as well, and the only way to
+release a rolling target: `bite_master` and `bite_ce_main` publish on the CalVer
+series, so both lineages could push a tag of the same name and the tag would not
+say which branch meant it. `--for-tag` refuses such a tag with that reason rather
+than guessing.
 
 The publish job runs behind the `crates-io` environment — required reviewers and
-the token belong there, and with the tag trigger in place that environment is the
-only thing between a push and crates.io — under a single `registry-publish`
-concurrency group, because the release targets share crate names and crates.io
-versions are immutable. It does not re-run the full gate: that already passed on
+the token belong there, and it is the only place a dispatch can turn into an
+upload — under a single `registry-publish` concurrency group, because the release
+targets share crate names and crates.io versions are immutable. It does not
+re-run the full gate: that already passed on
 the same commit, and holding the registry lock through a test suite is how a
 release ends up half done. It does keep the publish log as an artifact, which is
 what names the crate a rate limit stopped the run at and when the next attempt is

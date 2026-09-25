@@ -1,33 +1,44 @@
-# Publish one target's crates to crates.io.
+# Publish one target's crates to crates.io — one lineage, one branch, one version.
 #
-# Two ways in.
+# Dispatch only, and the reason is which repository this is. The `bite_*` tags live
+# in the *source* repository, `bite-gpui/bite-gpui`; a `push: tags` trigger here
+# would watch *this* repository, where those tags never appear. A trigger that
+# cannot fire is worse than none, so a release starts one of two ways: `tag.yml` in
+# this repository, which resolves the branch to its tag, pushes the tag to the
+# source repository and dispatches this workflow; or this workflow's own dispatch,
+# for a dry run, for a target whose tag already exists, or for a rolling target
+# that has no tag at all. Wanting release-on-tag means putting the trigger in the
+# source repository, where the tags are, dispatching this one.
 #
-# A **tag push** is the release act. `bite_1.21.0` releases `bite_v1.21.0`,
-# because the tag is what staging reads the version from — targets.py already
-# computes the tag each release target must carry, so the workflow resolves the
-# branch from the tag rather than parsing it. Staging then refuses to run unless
-# the branch tip carries that exact tag, so what a tag push publishes cannot
-# drift from what the tag says.
-#
-# A **dispatch** is for everything else: a dry run, and the rolling targets
-# (`bite_master`, `bite_ce_main`), whose version is a date, so both lineages
-# could push a tag of the same name and the tag would not say which branch it
-# meant. Those are named explicitly.
-#
-# crates.io versions are immutable, so the real path is fenced three times: a
-# dispatch must ask for it and repeat the target name; either way the publish job
-# waits on the `crates-io` environment, which is where the token lives and where
-# required reviewers belong; and a single `registry-publish` concurrency group
-# means two releases never overlap. The token is a repository/Environment secret
-# and never reaches a pull request, because this workflow has no pull-request
-# trigger.
+# crates.io versions are immutable, so the real path is fenced twice: a dispatch
+# must ask for it and repeat the target name, and the publish job waits on the
+# `crates-io` environment, which is where the token lives and where required
+# reviewers belong. A single `registry-publish` concurrency group means two
+# releases never overlap. The token is a repository/Environment secret and never
+# reaches a pull request, because this workflow has no pull-request trigger.
 name: Release
 
 on:
   workflow_dispatch:
     inputs:
+      # A `choice` list, not free text: it is the branches of the source repository,
+      # and `targets.py --validate` fails if it and the table ever disagree.
       target:
-        description: 'target name from targets.toml (e.g. bite_v1.21.0, bite_ce_main)'
+        description: 'target to release (a branch of bite-gpui/bite-gpui)'
+        type: choice
+        options:
+          - bite_v1.22.0-pre
+          - bite_v1.21.0
+          - bite_v1.21.0-pre
+          - bite_v1.20.2
+          - bite_v1.19.x
+          - bite_v1.18.x
+          - bite_v1.17.x
+          - bite_v1.16.x
+          - bite_v1.15.x
+          - bite_v1.14.x
+          - bite_master
+          - bite_ce_main
         required: true
       confirm:
         description: 'repeat the target name to confirm a real publish'
@@ -38,8 +49,6 @@ on:
         type: boolean
         required: false
         default: true
-  push:
-    tags: ['bite_*']
 
 # Stable and preview uploads share one crates.io namespace, and the release
 # targets share crate names, so two releases must never overlap.
@@ -66,7 +75,7 @@ jobs:
       repository: ${{ steps.resolve.outputs.repository }}
       branch: ${{ steps.resolve.outputs.branch }}
       version: ${{ steps.resolve.outputs.version }}
-      dry_run: ${{ steps.mode.outputs.dry_run }}
+      dry_run: ${{ inputs.dry_run }}
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v5
@@ -76,32 +85,18 @@ jobs:
       - name: Validate the table
         run: python3 targets.py --validate
 
-      # The tag and the dispatch input are both external strings. They reach the
-      # shell as environment variables rather than substitutions, so a tag
-      # containing shell metacharacters stays a string and never a command.
       - name: Resolve the target
         id: resolve
         env:
-          EVENT: ${{ github.event_name }}
-          TAG: ${{ github.ref_name }}
           INPUT_TARGET: ${{ inputs.target }}
         run: |
           set -euo pipefail
-          if [ "$EVENT" = "push" ]; then
-            name="$(python3 targets.py --for-tag "$TAG")"
-            echo "tag $TAG resolves to $name"
-          else
-            name="$INPUT_TARGET"
-          fi
           # Emits target=, repository=, branch=, lineage=, upstream=,
           # amendment= and version= for $GITHUB_OUTPUT.
-          python3 targets.py --env "$name" >> "$GITHUB_OUTPUT"
+          python3 targets.py --env "$INPUT_TARGET" >> "$GITHUB_OUTPUT"
 
       - name: Refuse an unconfirmed publish
-        if: >-
-          github.event_name == 'workflow_dispatch'
-          && inputs.dry_run == false
-          && inputs.confirm != inputs.target
+        if: inputs.dry_run == false && inputs.confirm != inputs.target
         env:
           CONFIRM: ${{ inputs.confirm }}
           TARGET: ${{ inputs.target }}
@@ -109,22 +104,9 @@ jobs:
           echo "confirm ($CONFIRM) does not match target ($TARGET)" >&2
           exit 1
 
-      - name: Decide whether this run publishes
-        id: mode
-        env:
-          EVENT: ${{ github.event_name }}
-          REQUESTED: ${{ inputs.dry_run }}
-        run: |
-          # A tag push is the release act; a dispatch defaults to a dry run.
-          if [ "$EVENT" = "push" ]; then
-            echo "dry_run=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "dry_run=$REQUESTED" >> "$GITHUB_OUTPUT"
-          fi
-
       - name: Summarise
         env:
-          MODE: ${{ steps.mode.outputs.dry_run }}
+          MODE: ${{ inputs.dry_run }}
           TARGET: ${{ steps.resolve.outputs.target }}
           VERSION: ${{ steps.resolve.outputs.version }}
         run: |
@@ -202,12 +184,12 @@ jobs:
 
   publish:
     needs: [gate, prepare]
-    # A tag push publishes; a dispatch publishes only when it said so.
+    # A dispatch publishes only when it said so; there is no other way in.
     if: needs.prepare.outputs.dry_run == 'false'
     runs-on: ubuntu-latest
     # Approval gate, and where CARGO_REGISTRY_TOKEN lives. Configure the
-    # environment with required reviewers before the first automated publish:
-    # with the tag trigger, a push otherwise reaches crates.io unattended.
+    # environment with required reviewers: it is the last thing between a dispatch
+    # and an upload, and the only place the token is reachable.
     environment: crates-io
     # A first release of a new name family is rate-limited to about four hours
     # (DESIGN §11); a new version of a name that already exists is minutes. The

@@ -39,6 +39,18 @@ SCHEMES = ("release-tag", "calver")
 # something to run on every push.
 DEFAULT = ("bite_v1.20.2", "bite_ce_main")
 
+# A dispatch selector has to be a `choice` list in the workflow YAML: GitHub fills
+# the dropdown from the file, and from nothing that can read this table. Keeping the
+# two in step by hand drifts the first time a target is added, and the symptom is a
+# target nobody can select, so `--validate` compares them. The values are the
+# table's branches (which branch in the source repository to release) and names
+# (which target to dispatch).
+WORKFLOWS = DIST / ".github" / "workflows"
+SELECTORS = {
+    "tag.yml": ("branch", "branch"),
+    "release.yml": ("target", "name"),
+}
+
 
 def load() -> list[dict]:
     """The target table, with the repository default filled in.
@@ -90,6 +102,77 @@ def validate(targets: list[dict]) -> list[str]:
             problems.append(f"{where}: url must be https (CI clones it unauthenticated)")
         if not target.get("branch", "").startswith("bite_"):
             problems.append(f"{where}: branch should be a bite_* branch")
+    problems.extend(selector_problems(targets))
+    return problems
+
+
+def indented(lines: list[str], start: int) -> range:
+    """The lines belonging to the block opened by `lines[start]`."""
+    indent = len(lines[start]) - len(lines[start].lstrip())
+    end = start + 1
+    while end < len(lines):
+        line = lines[end]
+        if line.strip() and (len(line) - len(line.lstrip())) <= indent:
+            break
+        end += 1
+    return range(start + 1, end)
+
+
+def selector_options(text: str, input_name: str) -> list[str] | None:
+    """The `options:` of one workflow input, or None if that input has none.
+
+    Parsed by indentation rather than with a YAML library, to keep this file to the
+    standard library the way the rest of the pipeline does. The shape is small and
+    fixed: `inputs:` at one indent, `<input>:` one level in, `options:` a level below
+    that, then `- value` lines.
+    """
+    lines = text.splitlines()
+    starts = [index for index, line in enumerate(lines) if line.strip() == "inputs:"]
+    if not starts:
+        return None
+    for index in indented(lines, starts[0]):
+        if lines[index].strip() != f"{input_name}:":
+            continue
+        for inner in indented(lines, index):
+            if lines[inner].strip() != "options:":
+                continue
+            values = []
+            for item in indented(lines, inner):
+                value = lines[item].strip()
+                if value.startswith("- "):
+                    # A trailing comment is allowed; the option is the first token.
+                    values.append(value[2:].split()[0] if value[2:].split() else "")
+            return values
+        return None
+    return None
+
+
+def selector_problems(targets: list[dict]) -> list[str]:
+    """Why a dispatch selector and this table disagree, if they do."""
+    problems = []
+    for filename, (input_name, field) in SELECTORS.items():
+        path = WORKFLOWS / filename
+        if not path.is_file():
+            problems.append(f"{filename}: not found, so its dispatch selector cannot be checked")
+            continue
+        options = selector_options(path.read_text(), input_name)
+        if options is None:
+            problems.append(
+                f"{filename}: input `{input_name}` has no `options:` list, so the "
+                "selector is free text and a typo is a failed run"
+            )
+            continue
+        expected = sorted(target[field] for target in targets)
+        if sorted(options) == expected:
+            continue
+        missing = sorted(set(expected) - set(options))
+        extra = sorted(set(options) - set(expected))
+        detail = []
+        if missing:
+            detail.append("missing " + ", ".join(missing))
+        if extra:
+            detail.append("not in the table: " + ", ".join(extra))
+        problems.append(f"{filename}: `{input_name}` disagrees with targets.toml ({'; '.join(detail)})")
     return problems
 
 
@@ -159,11 +242,13 @@ def release_tag(upstream: str, amendment: int) -> str:
 
 
 def target_for_tag(targets: list[dict], tag: str) -> dict:
-    """The release target a pushed tag belongs to.
+    """The release target a tag belongs to.
 
-    The tag encodes the published version, and the table already computes the
-    tag each release target must carry, so the release workflow resolves a tag
-    push without a checkout and without parsing the tag.
+    The tag encodes the published version, and the table already computes the tag
+    each release target must carry, so this resolves in the other direction without
+    a checkout. It is a query — `release.yml` no longer triggers on a tag, because
+    the tags live in the source repository and a workflow here would never see them
+    (§12) — and it is the piece a trigger *in* the source repository would need.
 
     Rolling (`calver`) targets are excluded on purpose. Their version is a date,
     so both lineages could push a tag of the same name and the tag would not say

@@ -1,29 +1,47 @@
 # Tag a release branch, then publish it.
 #
-# The one manual step a release needs, and the convenient way in. It resolves a
-# `bite_*` branch to its target, derives the tag from the table (the tag *is* the
-# version), refuses a branch whose tip moved under an existing tag, pushes the
-# tag, and dispatches the publish workflow.
+# The manual way in. It resolves a `bite_*` branch to its target, derives the tag
+# from the table (the tag *is* the version), refuses a branch whose tip moved under
+# an existing tag, pushes the tag to the source repository, and dispatches the
+# publish workflow.
 #
-# It joins the two halves explicitly because a tag pushed with a repository's own
-# GITHUB_TOKEN does not start another workflow run — by design, to stop
-# recursion. A tag pushed by hand *does* start one, through release.yml's tag
-# trigger, so this workflow is the self-documenting path rather than the only one.
-# Publish concurrency plus publish.py's skip-what-exists make the overlap safe
-# either way.
+# It has to dispatch rather than let a tag trigger do it, and for a second reason
+# beyond GITHUB_TOKEN's recursion rule: the `bite_*` tags live in the *source*
+# repository, and `release.yml` lives in this one, so a `push: tags` trigger there
+# would be watching the wrong repository and could never fire. This workflow exists
+# precisely so the tag ends up in the right place and the release still starts.
 #
 # The secrets: SOURCE_WRITE_TOKEN needs `contents: write` on the source
 # repository, because this workflow pushes to a repository it does not live in.
-# A tag push cannot use GITHUB_TOKEN for that — it is scoped to this repository.
-# The registry token is not here: the publish it dispatches still runs behind the
-# `crates-io` environment, which is where an upload gets approved.
+# GITHUB_TOKEN cannot: it is scoped to this repository. The registry token is not
+# here — the publish it dispatches still runs behind the `crates-io` environment,
+# which is where an upload gets approved.
 name: Tag
 
 on:
   workflow_dispatch:
     inputs:
+      # A `choice` list, not free text: these are the branches of the source
+      # repository, `bite-gpui/bite-gpui`, and `targets.py --validate` fails if the
+      # list and the table ever disagree. Newest line first, so the default is the
+      # one most likely meant — and `dry_run` defaults to true, so a wrong pick
+      # still does not push anything.
       branch:
-        description: 'release branch to tag and publish (e.g. bite_v1.21.0)'
+        description: 'branch of bite-gpui/bite-gpui to tag and publish'
+        type: choice
+        options:
+          - bite_v1.22.0-pre
+          - bite_v1.21.0
+          - bite_v1.21.0-pre
+          - bite_v1.20.2
+          - bite_v1.19.x
+          - bite_v1.18.x
+          - bite_v1.17.x
+          - bite_v1.16.x
+          - bite_v1.15.x
+          - bite_v1.14.x
+          - bite_master
+          - bite_ce_main
         required: true
       force:
         description: 'proceed when the tip is already tagged: publishing a version not yet uploaded, or re-publishing a botched release'

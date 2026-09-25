@@ -95,6 +95,13 @@ gh workflow run tag.yml -f branch=bite_v1.21.0 -f dry_run=false   # tag it and p
 gh workflow run tag.yml -f branch=bite_v1.21.0 -f dry_run=false -f force=true  # re-publish
 ```
 
+`branch` and `target` are `choice` lists of the **source repository's** branches —
+`bite-gpui/bite-gpui` — not free text, so a typo cannot start a run against a
+branch that does not exist, and `targets.py --validate` fails if either list and
+`targets.toml` ever disagree. (The dispatch dialog's *other* dropdown, "Use
+workflow from", selects this repository, because that is where the workflow file
+lives; it is not the branch being released.)
+
 `tag.yml` resolves the branch to its target, derives the tag from the table
 (`tag_release.py`), refuses a branch whose tip has moved under an existing tag,
 pushes the tag, and dispatches the publish. `dry_run` defaults to true and only
@@ -108,13 +115,12 @@ different commit is refused even with `force`, and the answer there is to bump t
 target's `amendment` (DESIGN §6). A rolling target has no tag at all, and `tag.yml`
 says so and dispatches the publish directly.
 
-The tag is still the contract, and still enough on its own: staging refuses a
-release target whose tip is untagged and names the command. So a tag **pushed by
-hand** starts a release through release.yml's tag trigger, without `tag.yml` — it
-is the convenient, self-documenting path, not the only one. The two cannot
-double-publish: a tag pushed by a workflow using `GITHUB_TOKEN` does not cascade
-into another run, and a hand-pushed one does; either way the publish is serialised
-and skips versions that already exist.
+The tag is still the contract: staging refuses a release target whose tip is
+untagged and names the command. But it is not a trigger, and it cannot be one from
+here — the tags live in the source repository, and a `push: tags` trigger in this
+one would be watching the wrong repository and could never fire. A tag pushed by
+hand therefore starts nothing; release that branch with `tag.yml` and
+`-f force=true`, which is the same run that would have pushed the tag itself.
 
 A rolling target, or a bare dry run of the pipeline, goes straight to dispatch:
 
@@ -127,6 +133,12 @@ gh workflow run release.yml -f target=bite_v1.21.0 -f dry_run=true
 approval gate and the only place the registry token is reachable, and it is the
 last thing between a tagged release and crates.io.
 
+If you want release-on-tag — pushing `bite_1.21.0` to the source repository and
+having it publish — the trigger has to live *there*, since that is where the tags
+are. A ten-line workflow in `bite-gpui/bite-gpui` that runs
+`gh workflow run release.yml --repo bite-gpui/distribution -f target=...` is the
+whole of it; `targets.py --for-tag` is the lookup it would need.
+
 ## CI
 
 - `.github/workflows/ci.yml` — pull requests and `main`: validate the table and
@@ -135,15 +147,14 @@ last thing between a tagged release and crates.io.
 - `.github/actions/gate/action.yml` — the gate, shared by the release workflows:
   system deps, resolve, check, clippy `-D warnings`, test, package file sets,
   publish dry run.
-- `.github/workflows/tag.yml` — the manual release step. Dispatch with the branch;
-  it resolves the tag, refuses to move one, pushes it, and dispatches
-  `release.yml`.
-- `.github/workflows/release.yml` — a `bite_*` tag push, or manual dispatch.
-  Dispatch takes the target, a confirmation that must repeat it for a real
-  publish, and `dry_run` (default true); a tag push resolves the target from the
-  tag and publishes. Both paths run the gate, and only the publish job names the
-  `crates-io` environment, so `CARGO_REGISTRY_TOKEN` reaches exactly one step of
-  one job behind an approval.
+- `.github/workflows/tag.yml` — the manual release step. Dispatch it with a branch
+  from the source repository; it resolves the tag, refuses to move one, pushes it,
+  and dispatches `release.yml`.
+- `.github/workflows/release.yml` — dispatch only, because the tags it would want
+  to trigger on live in the source repository. It takes the target, a confirmation
+  that must repeat it for a real publish, and `dry_run` (default true). Only its
+  publish job names the `crates-io` environment, so `CARGO_REGISTRY_TOKEN` reaches
+  exactly one step of one job behind an approval.
 
 One environment and three secrets. The environment is `crates-io`, holding
 `CARGO_REGISTRY_TOKEN` for a real publish and (recommended) required reviewers.
