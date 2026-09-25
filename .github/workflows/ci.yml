@@ -68,14 +68,14 @@ jobs:
           repository: ${{ steps.refs.outputs.repository }}
           ref: ${{ steps.refs.outputs.zed }}
           path: .src/zed
-          token: ${{ secrets.SOURCE_READ_TOKEN || secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.SOURCE_READ_TOKEN || github.token }}
       - name: Check out the community-edition source
         uses: actions/checkout@v5
         with:
           repository: ${{ steps.refs.outputs.repository }}
           ref: ${{ steps.refs.outputs.ce }}
           path: .src/ce
-          token: ${{ secrets.SOURCE_READ_TOKEN || secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.SOURCE_READ_TOKEN || github.token }}
 
       - name: Verify published names
         run: |
@@ -115,7 +115,7 @@ jobs:
           repository: ${{ matrix.repository }}
           ref: ${{ matrix.branch }}
           path: src
-          token: ${{ secrets.SOURCE_READ_TOKEN || secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.SOURCE_READ_TOKEN || github.token }}
 
       # stage.py reads the manifests with tomllib, which is 3.11 and later; the
       # runner's own python3 is too old for that on macOS.

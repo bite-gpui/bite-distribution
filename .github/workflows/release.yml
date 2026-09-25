@@ -129,7 +129,7 @@ jobs:
           repository: ${{ needs.prepare.outputs.repository }}
           ref: ${{ needs.prepare.outputs.branch }}
           path: src
-          token: ${{ secrets.SOURCE_READ_TOKEN || secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.SOURCE_READ_TOKEN || github.token }}
 
       # The published version is the version the branch tip is tagged with.
       - name: Fetch the release tags
@@ -203,7 +203,7 @@ jobs:
           repository: ${{ needs.prepare.outputs.repository }}
           ref: ${{ needs.prepare.outputs.branch }}
           path: src
-          token: ${{ secrets.SOURCE_READ_TOKEN || secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.SOURCE_READ_TOKEN || github.token }}
 
       - name: Fetch the release tags
         working-directory: src

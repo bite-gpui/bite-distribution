@@ -158,13 +158,23 @@ whole of it; `targets.py --for-tag` is the lookup it would need.
 
 One environment and three secrets. The environment is `crates-io`, holding
 `CARGO_REGISTRY_TOKEN` for a real publish and (recommended) required reviewers.
-The repo secrets are `SOURCE_READ_TOKEN` if the source repository is private, and
-`SOURCE_WRITE_TOKEN` with `contents: write` on the source repository — which is
-what lets `tag.yml` push a tag to a repository it does not live in, since
-`GITHUB_TOKEN` is scoped to this one and cannot. None of them is reachable from a
-pull request: no workflow here has a pull-request trigger. A local `cargo login`
-is only for hand runs from a prepared stage tree, which is how the first release
-was done.
+
+The repo secrets are optional or required depending on which repository they read:
+
+- **`SOURCE_READ_TOKEN`** — only needed if the source repository is private. Every
+  checkout that reads it falls back to the run's own `github.token`, so an unset
+  read token is not an error.
+- **`SOURCE_WRITE_TOKEN`** with `contents: write` on the source repository —
+  required for `tag.yml`, and it has no fallback, because `github.token` is scoped
+  to *this* repository and cannot push a tag to another one. It must be a
+  **repository** secret, not an environment secret: the tag job names no
+  environment, so an environment secret is not visible to it. The workflow checks
+  for it up front and fails with that explanation, rather than letting
+  `actions/checkout` fail with `Input required and not supplied: token`.
+
+None of them is reachable from a pull request: no workflow here has a
+pull-request trigger. A local `cargo login` is only for hand runs from a prepared
+stage tree, which is how the first release was done.
 
 ## Validated so far
 

@@ -87,12 +87,34 @@ jobs:
           python3 targets.py --validate
           python3 targets.py --for-branch "$BRANCH" >> "$GITHUB_OUTPUT"
 
-      # The branch itself, checked out with a token that can also push to it.
+      # A missing secret must say so here rather than surfacing as `actions/checkout`
+      # failing with "Input required and not supplied: token", which names neither
+      # the secret nor the fix — an explicitly empty `token:` overrides the action's
+      # own default, so an unset secret is a hard error at the next step. This is
+      # also the one token with no fallback: `github.token` is scoped to this
+      # repository and cannot push a tag to another one.
+      - name: Require the token that writes to the source repository
+        env:
+          TOKEN: ${{ secrets.SOURCE_WRITE_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -n "$TOKEN" ]; then
+            exit 0
+          fi
+          echo "::error title=missing secret::SOURCE_WRITE_TOKEN is empty. Tagging needs a" \
+               "token with 'contents: write' on the source repository, stored as a repository" \
+               "secret on $GITHUB_REPOSITORY. This job names no environment, so an environment" \
+               "secret is not visible to it. A fine-grained token limited to that repository" \
+               "and its contents is enough."
+          exit 1
+
+      # The branch itself, checked out with the token that will also push the tag.
       - uses: actions/checkout@v5
         with:
           repository: ${{ steps.resolve.outputs.repository }}
           ref: ${{ steps.resolve.outputs.branch }}
           path: src
+          # Non-empty, by the step above.
           token: ${{ secrets.SOURCE_WRITE_TOKEN }}
 
       # All of the judgement is in the script, which is why it is testable
@@ -133,7 +155,7 @@ jobs:
       - name: Trigger the publish
         if: inputs.dry_run == false
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
           TARGET: ${{ steps.tag.outputs.target }}
         run: |
           set -euo pipefail
