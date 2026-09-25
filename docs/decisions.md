@@ -10,6 +10,14 @@ Each decision the design rested on, its status, and the evidence.
 
 Each heading carries its own status: decided, in force, or open.
 
+| decision | status | outcome |
+| --- | --- | --- |
+| 13.1 where the project lives | decided: `bite-gpui/distribution` | publishing is a separate concern from the architecture work |
+| 13.2 two namespaces | decided: two | one crate name would otherwise cover two different crates |
+| 13.3 what `bite_master` publishes as | in force: the CalVer series | a release requirement must not resolve to a master snapshot |
+| 13.4 the GPL crates | decided by shipping: published GPL-labelled | it is what zed does, and GPL-3.0 is Apache-compatible |
+| 13.5 crate metadata and ownership | partly done | `repository` and empty descriptions are staging's; the rest is not |
+
 ### 13.1 Where the Project Lives — **decided: `bite-gpui/distribution`**
 `.dist/` is ignored in the zed clone (like `.tools/`). It lives at
 `git@github.com:bite-gpui/distribution.git`, as its own repository, because
@@ -89,6 +97,18 @@ Not done: a description that names the upstream origin. Because the rule is
 framework"* with nothing to say it is a build of zed v1.20.2; nor are
 `keywords`/`categories`/`homepage` set by this pipeline rather than inherited from
 the source (`homepage` is `https://gpui.rs`), nor are there per-crate READMEs.
+
+By what the pipeline does and does not:
+
+```
+done by staging (pipeline/stage.py)
+  ├── repository     the bite-gpui workspace URL, on every crate
+  └── description    filled only where the source had none
+still outstanding
+  ├── a description naming the upstream origin — the facade especially
+  ├── keywords, categories and homepage — inherited from the source today
+  └── a per-crate README
+```
 
 *(Verified 2026-09-25 against the published `bite-gpui` 1.20.203 and
 `pipeline/stage.py`.)*
