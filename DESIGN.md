@@ -678,6 +678,15 @@ reservation of a name that must exist before anything may name it.
 - **table** validates `targets.toml`, then runs the naming rule against a real
   closure per lineage, so a new crate that would land on a taken name fails long
   before a release rather than during one;
+- **lint** runs `checks/workflows.py`: actionlint over `.github/workflows`, and a
+  pass over the `inputs:` and `outputs:` of the actions those workflows use. The
+  second pass exists because actionlint does not read the `steps:` of a composite
+  action — its documentation says so — so the four actions `verify` is built from,
+  and every call site inside them, are invisible to it. The actionlint binary is
+  fetched from its release page and verified against a checksum pinned in the
+  script, so a run uses the version the file names. `plan` needs this job, so a
+  wiring mistake fails in seconds rather than after a matrix leg has staged a
+  target;
 - **plan** turns the selector into a matrix via `pipeline/targets.py`;
 - **stage** (matrix) checks the target branch out, stages it, and runs verification.
   A pull request stages one target per lineage (`default`); dispatch with `all`

@@ -15,3 +15,8 @@ publish-resume.log
 __pycache__/
 *.pyc
 wt-*/
+
+# A tool binary fetched on demand, with its checksum verified: actionlint, by
+# checks/workflows.py. It is reproducible from the pinned version, so it is not
+# a source of truth either.
+.cache/

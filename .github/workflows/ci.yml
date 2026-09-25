@@ -83,8 +83,29 @@ jobs:
             --lineage-repo zed=.src/zed \
             --lineage-repo ce=.src/ce
 
+  # The workflow files are code, and this is the only thing that reads them the way
+  # GitHub does. It runs before `plan` so a wiring mistake — an input that no longer
+  # exists, an output that never did — fails in seconds rather than after the matrix
+  # has spent minutes staging a target that cannot publish.
+  lint:
+    name: CI wiring
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      # `checks/workflows.py` fetches actionlint itself, verified against a
+      # checksum pinned in it. It needs PyYAML, which the runner's Python does not
+      # carry, for the pass over the actions' own `inputs:` and `outputs:`.
+      - name: Lint the CI wiring
+        run: |
+          python3 -m pip install --quiet --disable-pip-version-check 'pyyaml==6.*'
+          python3 checks/workflows.py
+
   plan:
-    needs: table
+    needs: [table, lint]
     runs-on: ubuntu-latest
     outputs:
       matrix: ${{ steps.matrix.outputs.matrix }}

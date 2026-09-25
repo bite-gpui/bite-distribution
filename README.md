@@ -33,10 +33,12 @@ pipeline/        the release pipeline, run in order
   stage.py         carve a target into a publishable state
   publish.py       publish a staged target, in dependency order
   tag_release.py   resolve a branch to the tag it must carry, push it
-checks/          the checks a staged tree must pass
+checks/          what a staged tree must pass, plus one check on the repository
   check_reads.py       packaged file sets, and paths that escape the crate
   apple_build_check.py the Apple crate's cbindgen header is generated
   test_isolated.py     each tarball compiles with no siblings, as crates.io sees it
+  workflows.py         the CI wiring: actionlint over the workflows, and a pass over
+                       the actions' own inputs and outputs
 .github/         ci.yml, tag.yml, release.yml, actions/verify/ (over linux-deps,
                  preflight, code-checks and build-checks)
 targets.toml     the twelve target branches, the table the pipeline reads
@@ -44,9 +46,11 @@ DESIGN.md  README.md  rust-toolchain.toml
 ```
 
 The scripts in `pipeline/` import each other by bare name and add their own
-directory to `sys.path`, so they have to stay together. The `checks/` scripts take
-the stage as an argument and read nothing relative to themselves, so they run from
-the stage like `python3 "$GITHUB_WORKSPACE/checks/check_reads.py" --stage .`.
+directory to `sys.path`, so they have to stay together. Most of the `checks/`
+scripts take the stage as an argument and read nothing relative to themselves, so
+they run from the stage like `python3 "$GITHUB_WORKSPACE/checks/check_reads.py"
+--stage .`; `workflows.py` is the one that reads the repository instead, so it runs
+from the repository root.
 
 ## Pipeline
 
@@ -84,6 +88,7 @@ being released.
 | `checks/check_reads.py` | every file a package names is packaged, and none escapes the crate |
 | `checks/apple_build_check.py` | the Apple crate's cbindgen shader header is generated |
 | `checks/test_isolated.py` | each tarball compiles alone, the way crates.io ships it |
+| `checks/workflows.py` | lints the CI wiring: actionlint over the workflows, and the actions' inputs and outputs |
 
 `pipeline/inventory.py` is the load-bearing one and is useful on its own — the closures
 it reports are measured, not assumed, which is how the project knows the zed
@@ -181,6 +186,10 @@ whole of it; `pipeline/targets.py --for-tag` is the lookup it would need.
 - `.github/workflows/ci.yml` — pull requests and `main`: validate the table and
   naming rule, then stage one target per lineage through verification. Dispatch
   with `all` for every branch.
+- `.github/workflows/ci.yml`'s `lint` job — `checks/workflows.py`, which runs
+  actionlint over the workflow files and checks the wiring actionlint cannot see,
+  the call sites inside the composite actions. It runs before `plan`, so a wiring
+  mistake fails in seconds instead of after the matrix has staged a target.
 - `.github/actions/verify/action.yml` — the entry point, shared by the release
   workflows so they run the same checks as a pull request by construction. It runs
   four phase actions, cheapest first: `linux-deps` (the system packages a Linux leg
