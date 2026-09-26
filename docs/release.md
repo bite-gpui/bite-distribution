@@ -101,14 +101,16 @@ compilation that skips. And the order comes from the manifests rather than a
 hand-kept list, because the two lineages and ten release targets have
 different leaf sets.
 
-**Status, once the first release is done.** The zed lineage's thirty-one names
-are published from `1.20.203`, which changes what the next release costs rather
-than merely proving the pipeline. New *versions* of names that already exist are
-the cheap case — a burst of thirty, then one a minute — so a release of a target
-whose name set is unchanged is minutes, and `bite_v1.21.0`'s is unchanged. The
-expensive case is a new name family, and it is paid once per lineage rather than
-once per release: the five-name burst, the hours of pacing, and the one-time
-reservation of a name that must exist before anything may name it.
+**Status, once the first release is done.** The zed lineage's names are published
+from `1.20.203`, which changes what the next release costs rather than merely
+proving the pipeline. New *versions* of names that already exist are the cheap case
+— a burst of thirty, then one a minute — so a release of a target whose name set is
+unchanged is minutes. `bite_v1.21.0` was that case: the same names as the release
+before it, thirty-one of them, all live. A later release of the same target carries
+thirty, because `bite-gp-parley` left the set for a repository of its own. The expensive case is a new name family, and it
+is paid once per lineage rather than once per release: the five-name burst, the
+hours of pacing, and the one-time reservation of a name that must exist before
+anything may name it.
 
 ## 12. CI
 

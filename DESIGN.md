@@ -3,7 +3,7 @@
 | Attribute | Specification |
 | --- | --- |
 | **Status** | Active — as built 2026-09-25 |
-| **Published state** | The Zed lineage is published: thirty-one crates at `1.20.203`, and `bite_v1.21.0` is part-published — a release resumes with `--only` ([§12](docs/release.md)) |
+| **Published state** | The Zed lineage publishes thirty crates. Its newest release is `1.21.0`, which shipped thirty-one — `bite-gp-parley` has since moved to a repository of its own, where that name continues at `1.21.1`, and left this set. `1.20.203` precedes it. `bite-gpui-ce` is unclaimed, and no other target has been released |
 | **Source specification** | `targets.toml`, verified 2026-09-25 |
 | **Registry** | crates.io |
 

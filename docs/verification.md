@@ -119,7 +119,7 @@ stricter.
 The set is passed as explicit `-p` flags rather than `--workspace`: the
 checkout carries all ~250 zed crates, and checking them is neither wanted nor
 affordable on every push. Withheld crates ([§8](staging.md)) are still checked —
-they build, they just cannot be published — so verification covers 55 of the 57
+they build, they just cannot be published — so verification covers 54 of the 56
 names in the union.
 
 ### Core Technical Rules
@@ -177,8 +177,8 @@ act, taken together with a run that fixes whatever the newer toolchain reports.
 ### Target Scope & Known Exclusions
 
 ```
-57 names in the union
-  ├── 55 checked natively
+56 names in the union
+  ├── 54 checked natively
   │    ├── publishable — the full pipeline and the dry run
   │    └── withheld (§8) — built and verified, publication blocked
   └── 2 wasm-only — not checked at all

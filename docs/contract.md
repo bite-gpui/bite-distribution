@@ -63,10 +63,19 @@ original = "gpui"
 ## 4. Which Crates
 
 The GPUI crates set — the crates a target depends on, reached by path
-dependencies — is computed from the manifests, not from a list. `crates/gpui`
-(and `crates/gpui_parley`, which nothing depends on but which consumers want to
-select directly) are the roots; from there `.dist/pipeline/inventory.py` walks
+dependencies — is computed from the manifests, not from a list. The zed lineage
+walks from `crates/gpui` alone; the ce lineage from `crates/gpui-ce` and
+`crates/gpui_parley`, because the `gpui_ce_*` platform stack is only reachable
+through the second there. From those, `.dist/pipeline/inventory.py` walks
 in-checkout path dependencies.
+
+`gpui_parley` is no longer published from the zed lineage. It is a second
+implementation of `TextSystem` rather than a layer of the stack, it has a
+repository of its own, and it continues publishing the name this pipeline gave it
+— `bite-gp-parley`, at `1.21.1` — from there, so it is not a root and is not in the
+closure; the crate stays in the source branches as a subject for the backport and
+rebase tooling. Measured on `bite_v1.21.0`, the two old roots resolved to 31 crates
+and `gpui` alone resolves to 30.
 
 ### Discovery Mechanics
 
@@ -88,14 +97,15 @@ Measured over normal plus build reachability:
 
 | Target | Crates | Composition & Notes |
 | --- | --- | --- |
-| `bite_v1.14.x` | 31 | the release line's set, which the other nine share: `media`, `sum_tree`, `zlog` included |
-| `bite_master` | 30 | 1.14 minus `media` |
-| `bite_ce_main` | 26 | CE's own `gpui_ce_*` set replaces the vendored Zed crates |
+| `bite_v1.14.x` | 30 | the release line's set, which the other nine share: `media`, `sum_tree`, `zlog` included. `gpui_parley` left this set when it moved to its own repository |
+| `bite_master` | 29 | 1.14 minus `media` |
+| `bite_ce_main` | 26 | CE's own `gpui_ce_*` set replaces the vendored Zed crates; the ce closure still walks from `gpui_parley` |
 
-Union across targets: **50 source packages**. The release line's set did not
-change over the ten branches — 1.14 and 1.21.0-pre resolve to exactly the same
-31 crates, and `bite_master` is that set minus `media` — but verification re-measures
-per materialized worktree rather than assuming it.
+Union across targets: **50 source packages**, `gpui_parley` among them through the
+ce lineage. The release line's set did not change over the ten branches — 1.14 and
+1.21.0-pre resolve to exactly the same 30 crates, and `bite_master` is that set
+minus `media` — but verification re-measures per materialized worktree rather than
+assuming it.
 
 ## 5. Published Names
 
@@ -129,15 +139,21 @@ The CE lineage prefixes `ce`, so a name never lies about which code it contains:
   keeps its full spelling. `--verify` re-derives this on every run rather than
   trusting the comment.
 
-**Verified Registry Status.** 57 distinct (lineage, package) pairs → 57 names, no
-collisions, and no name claimed by two lineages. `bite-gpui` was unclaimed when
+**Verified Registry Status.** 56 distinct (lineage, package) pairs → 56 names, no
+collisions, and no name claimed by two lineages. **`bite-gp-parley` is not among
+them** — it is the one name this table derived that the pipeline no longer
+publishes, because the crate left the zed closure (§4) for a repository of its own
+and continues that name from there. The rule that derived it stays here because it
+is the rule, not because a release produces it. `bite-gpui` was unclaimed when
 this was written and is now taken by the first release of this pipeline;
 `bite-gpui-ce` is still unclaimed. `gpui` itself is neither — it is owned by
 upstream Zed and has been published seven times. That is the strongest argument
 for the prefix: the name being reimplemented is already taken, by the project
-being reimplemented. *(Verified 2026-09-25: `gpui` has exactly seven versions —
-three yanked — and its owners are `zed-industries`; `bite-gpui` is at `1.20.203`;
-`bite-gpui-ce` 404s.)*
+being reimplemented. *(Re-derived 2026-09-26 with `pipeline/naming.py --verify`,
+which reports 56 pairs and 0 failures after `gpui_parley` left the zed closure;
+verified 2026-09-25, and re-checked 2026-09-26 for the second release: `gpui` has
+exactly seven versions — three yanked — and its owners are `zed-industries`;
+`bite-gpui` is at `1.21.0`, with `1.20.203` before it; `bite-gpui-ce` 404s.)*
 
 One consequence of preserving lib names: both facades export lib `gpui`, so a
 project depends on `bite-gpui` or `bite-gpui-ce`, never both. That is inherent —

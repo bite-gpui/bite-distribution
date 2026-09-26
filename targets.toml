@@ -5,6 +5,24 @@
 # (see DESIGN.md §6). `roots` are the source packages the closure is walked
 # from; everything else is discovered from the manifests.
 #
+# `roots` is where the lineages differ, by one entry. The zed lineage walks from
+# `gpui` alone: `gpui_parley` is not published from here any more, because it is a
+# second implementation of `TextSystem` rather than a layer of the stack, it lives
+# in its own repository with its own release workflow (`bite-gpui/gpui_parley`),
+# and it publishes under its own name from there. The crate stays in the source
+# branches — it is a subject for the backport and rebase tooling — but a crate
+# outside the closure is not renamed, versioned or staged for upload, so dropping
+# it from `roots` is what stops it publishing rather than a list of exclusions.
+# Measured on `bite_v1.21.0`: two roots resolve to 31 crates, `gpui` alone to 30,
+# and the difference is exactly `gpui_parley`.
+#
+# `bite_ce_main` keeps it, and has to. Measured on that branch, the ce facade's own
+# closure is 16 crates and `gpui_parley`'s is 26 — the whole `gpui_ce_*` platform
+# stack is reached through `gpui_parley`'s optional `gpui_ce_platform` dependency
+# and nothing else reaches it. Dropping it there would quietly stop publishing ten
+# ce crates. The ce lineage is unreleased, so neither arrangement has published
+# anything yet; that root is a thing to fix in the ce branch, not here.
+#
 # `version` is the upstream release a branch retargets. The version that gets
 # published is derived from it, not equal to it: `1.20.2` publishes as
 # `1.20.200`, leaving 201..299 for amendments to the same upstream patch and 300
@@ -26,7 +44,7 @@ name = "bite_v1.14.x"
 repo = "."
 branch = "bite_v1.14.x"
 lineage = "zed"
-roots = ["gpui", "gpui_parley"]
+roots = ["gpui"]
 # Upstream release the branch is built on; `version_from = "tag"` means the
 # stager re-derives it and fails if the branch moved off the release.
 version_from = "release-tag"
@@ -43,7 +61,7 @@ name = "bite_v1.15.x"
 repo = "."
 branch = "bite_v1.15.x"
 lineage = "zed"
-roots = ["gpui", "gpui_parley"]
+roots = ["gpui"]
 version_from = "release-tag"
 upstream = "1.15.1"
 # Two fixes so far, each new content on a release branch, which DESIGN §6 charges
@@ -58,7 +76,7 @@ name = "bite_v1.16.x"
 repo = "."
 branch = "bite_v1.16.x"
 lineage = "zed"
-roots = ["gpui", "gpui_parley"]
+roots = ["gpui"]
 version_from = "release-tag"
 upstream = "1.16.3"
 # Two fixes so far, each new content on a release branch, which DESIGN §6 charges
@@ -73,7 +91,7 @@ name = "bite_v1.17.x"
 repo = "."
 branch = "bite_v1.17.x"
 lineage = "zed"
-roots = ["gpui", "gpui_parley"]
+roots = ["gpui"]
 version_from = "release-tag"
 upstream = "1.17.2"
 # Two fixes so far, each new content on a release branch, which DESIGN §6 charges
@@ -88,7 +106,7 @@ name = "bite_v1.18.x"
 repo = "."
 branch = "bite_v1.18.x"
 lineage = "zed"
-roots = ["gpui", "gpui_parley"]
+roots = ["gpui"]
 version_from = "release-tag"
 upstream = "1.18.1"
 # Three fixes in two amendments so far, each new content on a release branch,
@@ -103,7 +121,7 @@ name = "bite_v1.19.x"
 repo = "."
 branch = "bite_v1.19.x"
 lineage = "zed"
-roots = ["gpui", "gpui_parley"]
+roots = ["gpui"]
 version_from = "release-tag"
 upstream = "1.19.2"
 # Three fixes in two amendments so far, each new content on a release branch,
@@ -118,7 +136,7 @@ name = "bite_v1.20.2"
 repo = "."
 branch = "bite_v1.20.2"
 lineage = "zed"
-roots = ["gpui", "gpui_parley"]
+roots = ["gpui"]
 version_from = "release-tag"
 upstream = "1.20.2"
 # Three fixes so far, each new content on a release branch, which DESIGN §6 charges
@@ -135,7 +153,7 @@ name = "bite_v1.21.0-pre"
 repo = "."
 branch = "bite_v1.21.0-pre"
 lineage = "zed"
-roots = ["gpui", "gpui_parley"]
+roots = ["gpui"]
 version_from = "release-tag"
 upstream = "1.21.0-pre"
 # Three fixes in two amendments so far, each new content on a release branch,
@@ -150,7 +168,7 @@ name = "bite_v1.21.0"
 repo = "."
 branch = "bite_v1.21.0"
 lineage = "zed"
-roots = ["gpui", "gpui_parley"]
+roots = ["gpui"]
 version_from = "release-tag"
 upstream = "1.21.0"
 # Nothing yet, and it is the first line to start clean: the branch is upstream's
@@ -169,7 +187,7 @@ name = "bite_v1.22.0-pre"
 repo = "."
 branch = "bite_v1.22.0-pre"
 lineage = "zed"
-roots = ["gpui", "gpui_parley"]
+roots = ["gpui"]
 version_from = "release-tag"
 upstream = "1.22.0-pre"
 # Clean: the three fixes the older lines each needed (the embedded fonts, the
@@ -184,7 +202,7 @@ name = "bite_master"
 repo = ".tools/worktrees/wt-master"
 branch = "bite_master"
 lineage = "zed"
-roots = ["gpui", "gpui_parley"]
+roots = ["gpui"]
 version_from = "calver"
 
 # The community-edition lineage shares the main repository and publishes the

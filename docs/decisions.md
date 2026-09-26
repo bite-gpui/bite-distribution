@@ -110,5 +110,6 @@ still outstanding
   └── a per-crate README
 ```
 
-*(Verified 2026-09-25 against the published `bite-gpui` 1.20.203 and
-`pipeline/stage.py`.)*
+*(Verified 2026-09-25 against the published `bite-gpui` 1.20.203, and re-checked
+2026-09-26 against `1.21.0` and `pipeline/stage.py`: the facade still carries
+upstream's own description, `"Zed's GPU-accelerated UI framework"`.)*
