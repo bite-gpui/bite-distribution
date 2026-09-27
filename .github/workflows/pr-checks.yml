@@ -1,0 +1,84 @@
+# The pull-request entry point, for callers in another repository.
+#
+# `verify.yml` verifies a *target*: it resolves repository, branch and version from
+# the target table by name, then stages the branch. Staging rewrites `[package]
+# version` to the version the branch's release tag names, and `pipeline/targets.py`
+# refuses an untagged tip — so a pull request, whose head is by definition not the
+# tagged tip of a release branch, cannot go through it. What a pull request *can*
+# run is the part of the pipeline that reads the tree rather than the tag: the
+# target table and the naming rule, which are `ci.yml`'s `table` job.
+#
+# It is `workflow_call` so a repository that does not carry the checks can run them
+# from its own pull requests. The caller passes its own repository and ref, so this
+# does not depend on how a called workflow's implicit checkout resolves.
+name: Pull request checks
+
+on:
+  workflow_call:
+    inputs:
+      repository:
+        description: 'the repository under test, the caller'
+        required: true
+        type: string
+      ref:
+        description: 'the commit under test, the caller'
+        required: true
+        type: string
+      platforms:
+        description: 'runner label'
+        required: false
+        type: string
+        default: ubuntu-latest
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  wiring:
+    # A one-shot probe, kept until the answer is recorded: a reusable workflow is
+    # reachable from another repository, but whether its `./`-relative actions are
+    # resolved against the called repository or the caller's is the question that
+    # decides whether this file can use them at all. `continue-on-error` so the
+    # answer is visible without turning a caller's pull request red.
+    name: probe whether local actions resolve when called from another repository
+    continue-on-error: true
+    runs-on: ${{ inputs.platforms }}
+    steps:
+      - uses: actions/checkout@v5
+      - name: Resolve the called repository, not the caller's
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f pipeline/targets.py || {
+            echo "::warning title=local action probe::the checkout is not this repository"; }
+      - uses: ./.github/actions/build-env
+
+  table:
+    name: target table and naming rule
+    runs-on: ${{ inputs.platforms }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          repository: bite-gpui/distribution
+          path: .dist
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - uses: actions/checkout@v5
+        with:
+          repository: ${{ inputs.repository }}
+          ref: ${{ inputs.ref }}
+          path: src
+
+      - name: Validate the target table
+        working-directory: .dist
+        run: python3 pipeline/targets.py --validate
+
+      - name: Verify published names
+        working-directory: .dist
+        run: python3 pipeline/naming.py --verify --lineage-repo zed=../src
