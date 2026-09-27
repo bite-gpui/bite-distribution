@@ -32,7 +32,7 @@ HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
 TARGETS_FILE = ROOT / "targets.toml"
 
-REQUIRED = ("name", "url", "repo", "branch", "lineage", "roots")
+REQUIRED = ("name", "url", "repo", "branch", "lineage", "roots", "homepage")
 LINEAGES = ("zed", "ce")
 # `release-tag`: the tip carries a `bite_<version>` tag and publishes that
 # version. `calver`: a rolling tip, dated at staging time.
@@ -58,20 +58,25 @@ SELECTORS = {
 
 
 def load() -> list[dict]:
-    """The target table, with the repository default filled in.
+    """The target table, with the top-level defaults filled in.
 
-    Named once at the top level because every target shares it; materialising it
-    per target means every reader downstream still sees a concrete `url`.
+    `repository` and `homepage` are named once at the top level because every
+    target shares them; materialising them per target means every reader
+    downstream still sees a concrete `url` and `homepage`.
     """
     with TARGETS_FILE.open("rb") as handle:
         table = tomllib.load(handle)
-    default = table.get("repository")
+    repository = table.get("repository")
+    homepage = table.get("homepage")
     for target in table["target"]:
-        if target.get("url"):
-            continue
-        if not default:
-            raise SystemExit(f"{target.get('name')}: no url, and no top-level repository")
-        target["url"] = default
+        if not target.get("url"):
+            if not repository:
+                raise SystemExit(f"{target.get('name')}: no url, and no top-level repository")
+            target["url"] = repository
+        if not target.get("homepage"):
+            if not homepage:
+                raise SystemExit(f"{target.get('name')}: no homepage, and no top-level homepage")
+            target["homepage"] = homepage
     return table["target"]
 
 

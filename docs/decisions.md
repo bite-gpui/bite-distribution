@@ -16,7 +16,7 @@ Each heading carries its own status: decided, in force, or open.
 | 13.2 two namespaces | decided: two | one crate name would otherwise cover two different crates |
 | 13.3 what `bite_master` publishes as | in force: the CalVer series | a release requirement must not resolve to a master snapshot |
 | 13.4 the GPL crates | decided by shipping: published GPL-labelled | it is what zed does, and GPL-3.0 is Apache-compatible |
-| 13.5 crate metadata and ownership | partly done | `repository` and empty descriptions are staging's; the rest is not |
+| 13.5 crate metadata and ownership | partly done | `repository`, `homepage` and empty descriptions are staging's; the rest is not |
 
 ### 13.1 Where the Project Lives — **decided: `bite-gpui/distribution`**
 `.dist/` is ignored in the zed clone (like `.tools/`). It lives at
@@ -87,29 +87,33 @@ The crates need `description`, `keywords`, `categories`, `homepage`, and a
 no per-crate README (only `gpui` does), most set no `repository` at all and 3 still
 point at `zed-industries/zed`.
 
-Done by staging: `pipeline/stage.py` writes `repository` as the bite-gpui URL on
-every crate, and fills a description only where the source had none, generically
-("`<package>` — part of the bite-gpui rearchitecture of zed's gpui"). The owner
-account and token exist; the first release used them.
+Done by staging: `pipeline/stage.py` writes `repository` as the bite-gpui URL and
+`homepage` as the project's site (`https://bite-gpui.github.io/`, from the top-level
+`homepage` in `targets.toml`) on every crate — the latter *overriding* the
+`https://gpui.rs` the source manifests carry — and fills a description only where the
+source had none, generically ("`<package>` — part of the bite-gpui rearchitecture of
+zed's gpui"). The owner account and token exist; the first release used them.
 
 Not done: a description that names the upstream origin. Because the rule is
 "fill only if empty", the facade still reads *"Zed's GPU-accelerated UI
 framework"* with nothing to say it is a build of zed v1.20.2; nor are
-`keywords`/`categories`/`homepage` set by this pipeline rather than inherited from
-the source (`homepage` is `https://gpui.rs`), nor are there per-crate READMEs.
+`keywords`/`categories` set by this pipeline rather than inherited from the source,
+nor are there per-crate READMEs.
 
 By what the pipeline does and does not:
 
 ```
 done by staging (pipeline/stage.py)
   ├── repository     the bite-gpui workspace URL, on every crate
+  ├── homepage       the project's site, overriding the source's `https://gpui.rs`
   └── description    filled only where the source had none
 still outstanding
   ├── a description naming the upstream origin — the facade especially
-  ├── keywords, categories and homepage — inherited from the source today
+  ├── keywords and categories — inherited from the source today
   └── a per-crate README
 ```
 
 *(Verified 2026-09-25 against the published `bite-gpui` 1.20.203, and re-checked
 2026-09-26 against `1.21.0` and `pipeline/stage.py`: the facade still carries
-upstream's own description, `"Zed's GPU-accelerated UI framework"`.)*
+upstream's own description, `"Zed's GPU-accelerated UI framework"`. `homepage` was
+moved into staging on 2026-09-27; it lands on the next publish.)*

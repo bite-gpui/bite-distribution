@@ -15,6 +15,8 @@ crate:
 
 - `[package] name` -> the published name (naming.py), `[lib] name` untouched;
 - `[package] version` -> the version the branch's release tag names (§6);
+- `[package] repository` and `[package] homepage` -> the project's repository and
+  site, so a crates.io page links back here rather than to upstream;
 - crate-level `publish = false` removed, workspace default raised to true
   (zed's root sets `publish = false`, which 11 of the 1.14 closure inherit);
 - `[workspace.dependencies]` entries for closure crates gain `package` and
@@ -633,6 +635,11 @@ def stage(target: dict, source: Path, report_path: Path | None, strict: bool = F
                 json.dumps(f"{package} — part of the bite-gpui rearchitecture of zed's gpui"),
             )
         set_key(lines, "package", "repository", json.dumps(target["url"].removesuffix(".git")))
+        # Overrides upstream's own `homepage` (which is `https://gpui.rs`) and supplies
+        # one where the source had none, so every crates.io page links to this project
+        # rather than to Zed's. `set_key` replaces rather than fills, which is why it is
+        # unconditional here where the description below is not.
+        set_key(lines, "package", "homepage", json.dumps(target["homepage"]))
 
         rewrite_dep_specs(lines, f"{crate['dir']}/Cargo.toml", plans.get(manifest, {}), report)
 

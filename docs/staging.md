@@ -37,7 +37,11 @@ it keeps cargo itself as the source of truth.
    resolver caught the mismatch across the whole workspace.
 5. **Raise `publish`** — drop the crate-level `publish = false` (11 of the 1.14
    set inherit zed's workspace default) and flip the workspace default to true.
-6. **Rewrite every reference to a renamed crate**, in every manifest of the
+6. **Set the metadata** every published crate needs: `repository` and `homepage`
+   (the project's repository and site, from `targets.toml`, so a crates.io page links
+   here rather than to upstream's `https://gpui.rs`), and a `description` only where
+   the source had none ([§13.5](decisions.md)).
+7. **Rewrite every reference to a renamed crate**, in every manifest of the
    checkout, not only the set's. Cargo resolves the whole workspace, so a
    crate that depends on a renamed one but is not itself published has to keep
    resolving: ce's `gpui_ce_elements`, `gpui_ce_tokio` and `gpui_ce_zed_util`
@@ -45,15 +49,15 @@ it keeps cargo itself as the source of truth.
    `no matching package named gpui-ce found`. The reference gains `package` (the
    published name) and `version` (the target version); a manifest outside the
    set gets that and nothing else — no provenance, no licence, no bump.
-7. **Replace git dependencies** that have a registry equivalent (§8), scoped to
+8. **Replace git dependencies** that have a registry equivalent (§8), scoped to
    the set and to whichever manifest actually declares them.
-8. **License and provenance** (§9).
-9. **Re-read the result and check it** (`verify_staged`): every renamed crate
-   carries the right name, version and lib name; every dependency on one
-   resolves to the published name and version; and **no manifest anywhere still
-   names a package that was renamed**. That last check is what would have caught
-   the `gpui_ce_elements` failure before the resolver did. A crate with no name
-   in the naming rule is fatal; a withheld crate (§8) is reported, not fatal.
+9. **License and provenance** (§9).
+10. **Re-read the result and check it** (`verify_staged`): every renamed crate
+    carries the right name, version and lib name; every dependency on one
+    resolves to the published name and version; and **no manifest anywhere still
+    names a package that was renamed**. That last check is what would have caught
+    the `gpui_ce_elements` failure before the resolver did. A crate with no name
+    in the naming rule is fatal; a withheld crate (§8) is reported, not fatal.
 
 The report is the handoff: `pipeline/publish.py` reads it for the order, names and
 versions, so the two scripts cannot disagree about what is being released.

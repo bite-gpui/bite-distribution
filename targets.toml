@@ -39,6 +39,12 @@
 # Private repositories need a read token in CI.
 repository = "https://github.com/bite-gpui/bite-gpui.git"
 
+# The project's own site. Staging writes it as every crate's `package.homepage`, so a
+# crates.io page links here rather than to upstream's `https://gpui.rs` — which the
+# source manifests carry, or which they omit. Named once here for the same reason as
+# `repository`, and a target may override it with its own `homepage`.
+homepage = "https://bite-gpui.github.io/"
+
 [[target]]
 name = "bite_v1.14.x"
 repo = "."
