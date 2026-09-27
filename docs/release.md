@@ -118,10 +118,12 @@ anything may name it.
 
 | workflow | runs on | what it does |
 | --- | --- | --- |
+| `release-branch.yml` | dispatch | the entry point: resolve a branch, tag it, verify it through `verify.yml`, and dispatch `release.yml` |
 | `ci.yml` | pull requests, pushes to `main`, dispatch | validate the table and the naming rule, lint the CI wiring, plan the matrix, then stage and verify one target per lineage |
-| `verify.yml` | dispatch, or called by `ci.yml` | stage one target and run the checks over it, and leave the receipt a release reads |
+| `verify.yml` | dispatch, or called by `ci.yml` or `release-branch.yml` | stage one target and run the checks over it, and leave the receipt a release reads |
 | `tag.yml` | dispatch | resolve a branch to the tag it must carry, push it, and dispatch `release.yml` |
 | `release.yml` | dispatch | require that receipt, then stage and publish inside the `crates-io` environment |
+| `sync-release-target-options.yml` | schedule, dispatch | rewrite the dispatch `options:` lists from the table and the branches, opening a pull request when one drifts |
 
 ### `ci.yml`
 
@@ -166,6 +168,23 @@ checkout, with `isolated/target` as its own target directory. That is
 deliberately outside `target/` — the directory the build cache is keyed on — so a
 second, isolated set of artifacts is never cached, and the directory is
 disposable between runs.
+
+### `release-branch.yml`
+
+The entry point: dispatch it with a branch of the source repository and it does
+the whole sequence in one run — resolve the target, tag the branch
+(`pipeline/tag_release.py`, the same script `tag.yml` runs), verify the target by
+calling `verify.yml`, and dispatch `release.yml`. It wires the three steps rather
+than reimplementing them, so the checks and the publish keep the definitions
+`verify.yml` and `release.yml` already are.
+
+It is what releases a branch one command at a time instead of three with a wait
+in the middle. The version is the one the table declares (§6), so a branch that
+has not been released needs nothing bumped; new content for an already-published
+target is still an `amendment` bump ([§6](contract.md)) first. A dispatch is a
+report unless `dry_run` is off and `confirm` repeats the branch, and the tag
+refusal is `pipeline/tag_release.py`'s — a tag at a different commit fails the
+run before anything is verified or published.
 
 ### `tag.yml`
 
@@ -261,3 +280,23 @@ belong to `ci.yml`, and holding the registry lock through a test suite is how a
 release ends up half done. It does keep the publish log as an artifact, which is
 what names the crate a rate limit stopped the run at and when the next attempt is
 allowed.
+
+### `sync-release-target-options.yml`
+
+The dispatch workflows need the target table twice: once where it is read, and
+once as a `choice` input's `options:` list, because GitHub fills a dropdown from
+the workflow file and from nothing that can read `targets.toml`. `--validate`
+fails when the two copies drift, but it cannot fix them. This is the fix, on a
+schedule: `pipeline/sync_release_target_options.py` rewrites the `options:`
+blocks — the branches from the source repository's branch list, the target names
+from the table — and a run that changed anything opens a pull request against
+`main`. The rewrite touches only those blocks — a YAML round trip would drop the
+comments the workflows are written in — so a diff is the options and nothing
+else.
+
+The branches are filtered to the shapes `targets.is_release_branch` names —
+`bite_v<M>.<m>.<p>`, its `-pre` preview, `bite_master`, `bite_ce_main` and
+`bite_ce_v<M>.<m>.<p>` — so a working branch such as `bite_v1.21.0-some-feature`
+is never offered. A branch that is release-shaped but has no target is written and
+fails `--validate`, which is the drift the job surfaces rather than papering over:
+a new release line is a `targets.toml` entry to add.

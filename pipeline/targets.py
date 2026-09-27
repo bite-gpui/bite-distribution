@@ -20,6 +20,7 @@ from __future__ import annotations
 import argparse
 import datetime
 import json
+import re
 import subprocess
 import sys
 import tomllib
@@ -38,6 +39,27 @@ LINEAGES = ("zed", "ce")
 # version. `calver`: a rolling tip, dated at staging time.
 SCHEMES = ("release-tag", "calver")
 
+# The shapes a release branch may take, and the only ones a dispatch dropdown
+# should offer: the zed lineage's `bite_v<major>.<minor>.<patch|x>` and its `-pre`
+# preview, the rolling zed tip `bite_master`, and the community edition's
+# `bite_ce_main` and `bite_ce_v<major>.<minor>.<patch|x>`. A working branch beside
+# them — `bite_v1.21.0-some-feature` — matches none of these, which is the point:
+# the suffix that separates a release branch from a scratch one has to be a
+# *known* one, and `-pre` is the only suffix a release branch carries.
+RELEASE_BRANCH = re.compile(
+    r"bite_(?:"
+    r"v\d+\.\d+\.(?:\d+|x)(?:-pre)?"
+    r"|master"
+    r"|ce_main"
+    r"|ce_v\d+\.\d+\.(?:\d+|x)(?:-pre)?"
+    r")\Z"
+)
+
+
+def is_release_branch(branch: str) -> bool:
+    """Whether a branch name is one this project releases from."""
+    return RELEASE_BRANCH.match(branch) is not None
+
 # One target per lineage: what a pull request verifies. The full twelve are a
 # cold-build of gpui on three platforms' worth of code per target, which is not
 # something to run on every push.
@@ -52,6 +74,7 @@ DEFAULT = ("bite_v1.20.2", "bite_ce_main")
 WORKFLOWS = ROOT / ".github" / "workflows"
 SELECTORS = {
     "tag.yml": ("branch", "branch"),
+    "release-branch.yml": ("branch", "branch"),
     "release.yml": ("target", "name"),
     "verify.yml": ("target", "name"),
 }
@@ -112,6 +135,12 @@ def validate(targets: list[dict]) -> list[str]:
             problems.append(f"{where}: url must be https (CI clones it unauthenticated)")
         if not target.get("branch", "").startswith("bite_"):
             problems.append(f"{where}: branch should be a bite_* branch")
+        elif not is_release_branch(target["branch"]):
+            problems.append(
+                f"{where}: {target['branch']} is not a release branch shape; expected "
+                "bite_v<M>.<m>.<patch|x>, its -pre preview, bite_master, "
+                "bite_ce_main or bite_ce_v<M>.<m>.<patch|x>"
+            )
     problems.extend(selector_problems(targets))
     return problems
 
@@ -424,6 +453,8 @@ def main(argv: list[str]) -> int:
                              "macOS build of every selected target")
     parser.add_argument("--refs", action="store_true",
                         help="emit repository= and <lineage>=<branch> lines for $GITHUB_OUTPUT")
+    parser.add_argument("--repository", action="store_true",
+                        help="print owner/repo of the source repository")
     parser.add_argument("--tags", action="store_true",
                         help="print the release tag each selected target must carry")
     parser.add_argument("--for-tag", metavar="TAG",
@@ -444,6 +475,10 @@ def main(argv: list[str]) -> int:
         return 1
     if args.validate:
         print(f"{len(targets)} targets, no problems")
+        return 0
+
+    if args.repository:
+        print(repository_slug(targets[0]))
         return 0
 
     if args.refs:

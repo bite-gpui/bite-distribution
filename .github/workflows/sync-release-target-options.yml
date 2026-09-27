@@ -1,0 +1,102 @@
+# Keep the dispatch `options:` lists in step with the target table and the
+# branches that actually exist.
+#
+# GitHub fills a `choice` input's dropdown from the workflow file and from
+# nothing that can read `targets.toml`, so each workflow that dispatches a target
+# carries a second copy of the table — the branches of the source repository for
+# `tag.yml` and `release-branch.yml`, the target names for `release.yml` and
+# `verify.yml`. `pipeline/targets.py --validate` fails when a copy drifts, but it
+# cannot fix it. This runs `pipeline/sync_release_target_options.py`, which
+# rewrites just those `options:` blocks — the branches from the source
+# repository's branch list, the names from the table.
+#
+# The filter is what keeps a working branch out of a dropdown:
+# `bite_v1.21.0-some-feature` is not a release branch and is never offered —
+# `targets.is_release_branch` names the shapes that are. A branch that *is*
+# release-shaped but has no target is written and then fails `--validate`, so a
+# new release line surfaces as a `targets.toml` entry to add rather than being
+# papered over.
+#
+# It opens a pull request rather than pushing to `main`: the change is mechanical
+# and the job validates it, but `main` is where a release reads the table from,
+# and a one-line diff is cheaper to read than a push is to explain. The branch is
+# fixed, so a second run updates the same pull request instead of opening
+# another. A run over an in-step tree changes nothing and stops.
+name: Sync release target options
+
+on:
+  schedule:
+    # Daily. The lists move when a target or a release branch does, which is
+    # rare, so most runs find nothing to do and cost a checkout.
+    - cron: '23 5 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write       # push the branch the pull request is from
+  pull-requests: write  # open it
+
+# One run at a time. Two would race to push the same branch, and the second would
+# be rewriting the same file the first did.
+concurrency:
+  group: sync-release-target-options
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    name: sync the options with the table and the branches
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      # The source repository's branches, which is what the filter runs over. A
+      # read token is only needed when that repository is private; the run's own
+      # `github.token` reads another repository only when the other one is public.
+      # Written under `$RUNNER_TEMP`, so it is not a change the commit below
+      # would try to include.
+      - name: List the source repository's branches
+        env:
+          GH_TOKEN: ${{ secrets.SOURCE_READ_TOKEN || github.token }}
+        run: |
+          set -euo pipefail
+          repository="$(python3 pipeline/targets.py --repository)"
+          gh api "repos/$repository/branches" --paginate --jq '.[].name' \
+            | sort > "$RUNNER_TEMP/source-branches.txt"
+          wc -l < "$RUNNER_TEMP/source-branches.txt"
+
+      # Surgical: only the `options:` blocks move, so the workflows' comments
+      # survive. The report names each file `updated` or `in step`.
+      - name: Rewrite the option lists
+        run: |
+          set -euo pipefail
+          python3 pipeline/sync_release_target_options.py \
+            --branches "$RUNNER_TEMP/source-branches.txt"
+
+      # The table is the source of truth, so the rewritten lists have to still
+      # agree with it — a release-shaped branch with no target fails here.
+      - name: Validate the result
+        run: python3 pipeline/targets.py --validate
+
+      - name: Open a pull request if a list changed
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BRANCH: sync/release-target-options
+        run: |
+          set -euo pipefail
+          if [ -z "$(git status --porcelain)" ]; then
+            echo "::notice title=in step::the option lists already match the table and the branches"
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          git checkout -b "$BRANCH"
+          git add .github/workflows
+          git commit -m 'Sync dispatch options with the target table'
+          git push --force-with-lease origin "$BRANCH"
+          if [ "$(gh pr list --head "$BRANCH" --state open --json number --jq 'length')" = "0" ]; then
+            gh pr create --base main --head "$BRANCH" \
+              --title 'Sync dispatch options with the target table' \
+              --body 'A scheduled run found the `choice` inputs out of step and rewrote only their `options:` lists. `pipeline/targets.py --validate` is the check; review the lists and merge.'
+          fi

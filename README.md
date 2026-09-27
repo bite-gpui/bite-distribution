@@ -36,15 +36,18 @@ pipeline/        the release pipeline, run in order
   stage.py         carve a target into a publishable state
   publish.py       publish a staged target, in dependency order
   tag_release.py   resolve a branch to the tag it must carry, push it
+  sync_release_target_options.py
+                   rewrite the dispatch options from the table and branches
 checks/          what a staged tree must pass, plus one check on the repository
   check_reads.py       packaged file sets, and paths that escape the crate
   apple_build_check.py the Apple crate's cbindgen header is generated
   test_isolated.py     each tarball compiles with no siblings, as crates.io sees it
   workflows.py         the CI wiring: actionlint over the workflows, and a pass over
                        the actions' own inputs and outputs
-.github/         ci.yml, verify.yml, tag.yml, release.yml, actions/verify/
-                 (over preflight, code-checks and build-checks) and
-                 actions/build-env/ (the system packages, python, toolchain)
+.github/         ci.yml, verify.yml, tag.yml, release-branch.yml, release.yml,
+                 sync-release-target-options.yml, actions/verify/ (over preflight,
+                 code-checks and build-checks) and actions/build-env/ (the system
+                 packages, python, toolchain)
 targets.toml     the twelve target branches, the table the pipeline reads
 docs/            the design by chapter: contract (§3–§6), staging (§7–§9),
                  verification (§10), release (§11–§12), decisions (§13)
@@ -91,6 +94,7 @@ being released.
 | `pipeline/targets.py` | validates and selects targets; `--tags` says what to tag, `--for-tag` and `--for-branch` resolve the other way, `--matrix` and `--env` feed CI |
 | `pipeline/stage.py` | carves a target into a publishable state |
 | `pipeline/tag_release.py` | resolves a branch to the tag it must carry, refuses to move one, pushes it |
+| `pipeline/sync_release_target_options.py` | rewrites the dispatch `options:` lists from the table and a branch list, filtered to release branches; `--check` reports drift |
 | `pipeline/publish.py` | publishes a staged target in dependency order |
 | `checks/check_reads.py` | every file a package names is packaged, and none escapes the crate |
 | `checks/apple_build_check.py` | the Apple crate's cbindgen shader header is generated |
@@ -133,8 +137,24 @@ the zed clone, which is why these run from its root rather than from `.dist/`.
 
 ## Releasing
 
-Two dispatches, because verification takes minutes and publishing must not wait
-for it. Verify the target first, which leaves the receipt a release reads:
+`release-branch.yml` is the entry point: one dispatch per branch does the whole
+sequence — resolve the target, tag the branch, verify it, and release it. A
+dispatch is a report unless told otherwise:
+
+```sh
+gh workflow run release-branch.yml -f branch=bite_v1.14.x                      # report: which tag, does it exist
+gh workflow run release-branch.yml -f branch=bite_v1.14.x -f dry_run=false -f confirm=bite_v1.14.x
+```
+
+The version is the version `targets.toml` declares for the target, so a branch
+that has not been released already names its next version and there is nothing to
+bump; to release new content for a target that is already published, bump its
+`amendment` in `targets.toml` first (DESIGN §6). The three steps underneath are
+workflows of their own, which is what to dispatch directly when only one of them
+is what you are doing.
+
+Verification takes minutes and publishing must not wait for it, so verifying the
+target is its own dispatch that leaves the receipt a release reads:
 
 ```sh
 gh workflow run verify.yml -f target=bite_v1.21.0
@@ -213,9 +233,9 @@ whole of it; `pipeline/targets.py --for-tag` is the lookup it would need.
   mistake fails in seconds instead of after the matrix has staged a target.
 - `.github/workflows/verify.yml` — stage one target and run the checks over it.
   The only definition of that sequence: `ci.yml` calls it for the targets a pull
-  request stages, and dispatching it directly is how a target is verified before a
-  release. A dispatched run also uploads `verified-<target>-<version>`, the receipt
-  `release.yml` reads.
+  request stages, `release-branch.yml` calls it before it releases, and dispatching
+  it directly is how a target is verified on its own. A run that leaves the receipt
+  uploads `verified-<target>-<version>`, which `release.yml` reads.
 - `.github/actions/build-env/action.yml` — what compiling the set needs, in
   one place: the Linux system packages, python 3.13 and the pinned toolchain. Both
   `verify.yml` and the release job prepare it, which is the point — `cargo publish`
@@ -227,6 +247,12 @@ whole of it; `pipeline/targets.py --for-tag` is the lookup it would need.
   `checks/apple_build_check.py`, where the lineage has one), `code-checks` (clippy
   `-D warnings`, then the set's tests), and `build-checks` (the publish dry
   run, then the isolated build, `checks/test_isolated.py`).
+- `.github/workflows/release-branch.yml` — the entry point, and what releases a
+  branch in one dispatch. It resolves the target, tags the branch
+  (`pipeline/tag_release.py`, the same script `tag.yml` runs), verifies the target
+  by calling `verify.yml`, and dispatches `release.yml` — `tag.yml` and the
+  verification it assumes, as one run. A dispatch is a report unless `dry_run` is
+  off and `confirm` repeats the branch.
 - `.github/workflows/tag.yml` — the manual release step. Dispatch it with a branch
   from the source repository; it resolves the tag, refuses to move one, pushes it,
   and dispatches `release.yml`.
@@ -236,6 +262,13 @@ whole of it; `pipeline/targets.py --for-tag` is the lookup it would need.
   a real publish without a verification receipt unless `require_verify` is turned
   off. Only its publish job names the `crates-io` environment, so
   `CARGO_REGISTRY_TOKEN` reaches exactly one step of one job behind an approval.
+- `.github/workflows/sync-release-target-options.yml` — a scheduled run that
+  keeps the dispatch `options:` lists in step with `targets.toml` and the source
+  repository's branches (`pipeline/sync_release_target_options.py`, rewriting only
+  those blocks so the workflows' comments survive), opening a pull request when
+  one drifts. It filters the branch list to the release-branch shapes, so a
+  working branch is never offered; `pipeline/targets.py --validate` is what fails
+  when a release branch has no target.
 
 One environment and three secrets. The environment is `crates-io`, holding
 `CARGO_REGISTRY_TOKEN` for a real publish and (recommended) required reviewers.

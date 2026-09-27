@@ -1,0 +1,243 @@
+# The entry point: one dispatch to tag a branch, verify it and release it.
+#
+# A release is three steps — tag the branch (§6), verify the staged tree (§10),
+# and publish what was verified (§11) — and each has a workflow of its own:
+# `tag.yml`, `verify.yml` and `release.yml`. This is those three as one
+# dispatch, which is what makes releasing a branch one command rather than
+# three with a wait in the middle.
+#
+# It wires rather than reimplements. The tag judgement is
+# `pipeline/tag_release.py`'s, the same script `tag.yml` runs; verification is
+# `verify.yml`, the one definition of that sequence, called rather than copied;
+# and the publish is `release.yml`, dispatched exactly as `tag.yml` dispatches
+# it, so the `crates-io` environment still gates the upload. The receipt
+# `verify.yml` leaves for `release.yml` is uploaded in this run and read back by
+# name, so the verification and the publish do not have to be one run to agree.
+#
+# The version is the one `targets.toml` declares for the target: a release is a
+# tag and the tag *is* the version, so `tag_release.py` derives it from the
+# table and the branch tip must carry it. **To release new content for a target
+# that is already published, bump its `amendment` in `targets.toml` first**
+# (DESIGN §6) and run this again — nothing here moves a tag, because a moved tag
+# is a false statement about what was released. A branch that has not been
+# released already has the amendment that names its next version, so there is
+# nothing to bump and this is the whole of the release.
+#
+# A dispatch defaults to a report. `dry_run` resolves the branch, says which tag
+# it wants and whether it already exists, and stops — that is `tag.yml`'s dry
+# run, unchanged. Acting requires `dry_run` off and `confirm` repeating the
+# branch, the same fence `release.yml` puts in front of an upload, one step
+# earlier.
+name: Release branch
+
+run-name: ${{ (inputs.dry_run == false && format('Release {0}', inputs.branch)) || format('Dry run {0}', inputs.branch) }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      # A `choice` list, not free text: these are the branches of the source
+      # repository, `bite-gpui/bite-gpui`, and `pipeline/targets.py --validate`
+      # fails if the list and the table ever disagree. Newest line first, so the
+      # default is the one most likely meant — and `dry_run` defaults to true, so
+      # a wrong pick still tags and publishes nothing.
+      branch:
+        description: 'branch of bite-gpui/bite-gpui to tag, verify and release'
+        type: choice
+        options:
+          - bite_v1.22.0-pre
+          - bite_v1.21.0
+          - bite_v1.21.0-pre
+          - bite_v1.20.2
+          - bite_v1.19.x
+          - bite_v1.18.x
+          - bite_v1.17.x
+          - bite_v1.16.x
+          - bite_v1.15.x
+          - bite_v1.14.x
+          - bite_master
+          - bite_ce_main
+        required: true
+      dry_run:
+        description: 'resolve and report only — do not tag, verify or release'
+        type: boolean
+        required: false
+        default: true
+      platforms:
+        description: 'runner label to verify on'
+        required: false
+        default: ubuntu-latest
+      confirm:
+        description: 'repeat the branch to confirm a real release'
+        required: false
+        default: ''
+
+# One tagging-and-verifying run at a time, in the same group `tag.yml` uses: two
+# runs against one branch would race to create the same tag, and a run holds the
+# group through verification so a second cannot tag underneath it. The publish
+# it dispatches is serialised separately by `release.yml`'s own
+# `registry-publish` group.
+concurrency:
+  group: release-tag
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+
+permissions:
+  contents: read
+  # Dispatch `release.yml` once verification has passed.
+  actions: write
+
+jobs:
+  resolve:
+    name: resolve the branch
+    runs-on: ubuntu-latest
+    outputs:
+      target: ${{ steps.resolve.outputs.target }}
+      repository: ${{ steps.resolve.outputs.repository }}
+      branch: ${{ steps.resolve.outputs.branch }}
+      version: ${{ steps.resolve.outputs.version }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Refuse an unconfirmed release
+        if: inputs.dry_run == false && inputs.confirm != inputs.branch
+        env:
+          CONFIRM: ${{ inputs.confirm }}
+          BRANCH: ${{ inputs.branch }}
+        run: |
+          echo "confirm ($CONFIRM) does not match branch ($BRANCH)" >&2
+          exit 1
+
+      - name: Resolve the target
+        id: resolve
+        env:
+          BRANCH: ${{ inputs.branch }}
+        run: |
+          set -euo pipefail
+          python3 pipeline/targets.py --validate
+          # Emits target=, repository=, branch=, lineage=, upstream=,
+          # amendment= and version= for $GITHUB_OUTPUT.
+          python3 pipeline/targets.py --for-branch "$BRANCH" >> "$GITHUB_OUTPUT"
+
+  tag:
+    name: tag ${{ inputs.branch }}
+    needs: resolve
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+      state: ${{ steps.tag.outputs.state }}
+      tip: ${{ steps.tag.outputs.tip }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      # The branch itself. The token prefers the one that can also push, and
+      # falls back rather than being an empty `token:` — an explicitly empty
+      # value overrides actions/checkout's own default and fails with "Input
+      # required and not supplied: token", which names neither the secret nor the
+      # fix. Write access is only needed when there is a tag to push, and that is
+      # decided below.
+      - uses: actions/checkout@v5
+        with:
+          repository: ${{ needs.resolve.outputs.repository }}
+          ref: ${{ needs.resolve.outputs.branch }}
+          path: src
+          token: ${{ secrets.SOURCE_WRITE_TOKEN || secrets.SOURCE_READ_TOKEN || github.token }}
+
+      # Report first, because the report is what says whether a tag has to be
+      # pushed at all — the only case that needs a credential able to write to
+      # the source repository. A report-only run is not gated by `--push`, so a
+      # dry run, an already-tagged branch and a rolling target need read access
+      # at most, which is the common case.
+      - name: Resolve the tag
+        id: tag
+        env:
+          BRANCH: ${{ inputs.branch }}
+        run: |
+          set -euo pipefail
+          python3 pipeline/tag_release.py --branch "$BRANCH" --repo src >> "$GITHUB_OUTPUT"
+
+      - name: Require the write token, because this run has a tag to push
+        if: inputs.dry_run == false && steps.tag.outputs.state == 'untagged'
+        env:
+          TOKEN: ${{ secrets.SOURCE_WRITE_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -n "$TOKEN" ]; then
+            exit 0
+          fi
+          echo "::error title=missing secret::${{ inputs.branch }} is untagged, so this run" \
+               "has a tag to push, and SOURCE_WRITE_TOKEN is empty. Pushing needs a token with" \
+               "'contents: write' on the source repository, stored as a repository secret on" \
+               "$GITHUB_REPOSITORY: this job names no environment, so an environment secret is" \
+               "not visible to it. The run's own token cannot stand in — it is scoped here."
+          exit 1
+
+      - name: Push the tag
+        if: inputs.dry_run == false
+        env:
+          BRANCH: ${{ inputs.branch }}
+        run: |
+          set -euo pipefail
+          # stdout is the machine-readable report, which the step above already wrote.
+          python3 pipeline/tag_release.py --branch "$BRANCH" --repo src --push > /dev/null
+
+      - name: Summarise
+        if: always()
+        env:
+          TARGET: ${{ needs.resolve.outputs.target }}
+          VERSION: ${{ needs.resolve.outputs.version }}
+          TAG: ${{ steps.tag.outputs.tag }}
+          STATE: ${{ steps.tag.outputs.state }}
+          TIP: ${{ steps.tag.outputs.tip }}
+        run: |
+          {
+            echo "### ${TARGET:-unknown target}"
+            echo
+            echo "- version: \`${VERSION:-?}\`"
+            echo "- tag: ${TAG:-none (rolling target)}"
+            echo "- state: \`${STATE:-unknown}\`"
+            echo "- tip: \`${TIP:-?}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # Verification is `verify.yml`'s, called rather than copied, so there is one
+  # definition of staging and checking a target. Called from here it runs in this
+  # run and leaves the receipt `release.yml` reads; `needs` on the tag job means
+  # a branch that could not be tagged is never verified or published.
+  verify:
+    name: verify ${{ needs.resolve.outputs.target }}
+    needs: [resolve, tag]
+    if: inputs.dry_run == false
+    uses: ./.github/workflows/verify.yml
+    with:
+      target: ${{ needs.resolve.outputs.target }}
+      platforms: ${{ inputs.platforms }}
+      receipt: true
+    secrets: inherit
+
+  # Dispatch rather than call, so the upload stays behind `release.yml`'s own
+  # `crates-io` environment — the approval gate and the only place the registry
+  # token is reachable. `needs: verify` is what makes this wait for a passed
+  # verification, and the receipt that verification left is found by the
+  # publish's `prepare` job, which asks the artifacts API for it by name.
+  release:
+    name: release ${{ needs.resolve.outputs.target }}
+    needs: [resolve, verify]
+    if: inputs.dry_run == false
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dispatch the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET: ${{ needs.resolve.outputs.target }}
+        run: |
+          set -euo pipefail
+          gh workflow run release.yml --ref main \
+            -f target="$TARGET" -f confirm="$TARGET" -f dry_run=false
+          echo "dispatched release.yml for $TARGET"
