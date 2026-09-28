@@ -37,6 +37,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import posixpath
 import re
 import shutil
 import subprocess
@@ -202,15 +203,16 @@ def inline_value(value) -> str:
 # --- staging ----------------------------------------------------------------
 
 
-def versionless_dev_dep(record: dict) -> bool:
-    """A path dev-dependency with no version, which cargo strips when packaging.
+def unversioned_dev_dep(record: dict) -> bool:
+    """A dev-dependency that carries no version, which cargo strips when packaging.
 
-    The one shape that must not be given a version. A layer crate's doctests are
-    written against the public `gpui` API, so compiling them needs a cycle back
-    to the facade; cargo drops a versionless dev-dependency from the published
-    manifest, which is what keeps that cycle local. Adding a version instead
-    publishes it, and crates.io then refuses the upload with `no known crate
-    named <facade>` because the facade is published later in the same release.
+    The invariant `dep_edits` establishes for every dev-dependency on a closure
+    crate, and the exception `verify_staged` reads back. A versionless path
+    dev-dependency is dropped from the published manifest, which is what keeps a
+    dev-only edge out of the upload — to the facade, which is published last, or
+    to a withheld crate, which is never published. A version there is what
+    crates.io refused with `no known crate named bite-gpui-ce` and `no known
+    crate named bite-gp-ce-platform`.
     """
     return (
         record.get("version") is None
@@ -257,16 +259,36 @@ def dep_edits(source: Path, crates: dict, names, published: dict, version: str) 
                 if record["kind"] == "path":
                     dependency = record.get("path_package")
                     if dependency in published:
-                        # The rename always, the version only when the dependency
-                        # is published; see `versionless_dev_dep`.
-                        edits = {"package": published[dependency]}
-                        if not versionless_dev_dep(record):
-                            edits["version"] = version
-                        plans.setdefault(target, {})[key] = {
-                            "kind": "path",
-                            "drop": [],
-                            "set": edits,
-                        }
+                        # The shared declaration keeps the published name and the
+                        # release version: a normal or build user needs both to
+                        # package, and a member binding that inherits it needs
+                        # both to resolve.
+                        shared = plans.setdefault(target, {}).setdefault(
+                            key, {"kind": "path", "drop": [], "set": {}}
+                        )
+                        shared["set"].update(
+                            {"package": published[dependency], "version": version}
+                        )
+                        if record["where"].split(".")[-1] == "dev-dependencies":
+                            # A dev-dependency must carry no version (see
+                            # `unversioned_dev_dep`), and a member that inherits
+                            # one cannot drop the inherited version — so the
+                            # declaration is materialized on the member: the
+                            # rename it still needs, the path when the path came
+                            # from the workspace table, and no version.
+                            member = source / crate["dir"] / "Cargo.toml"
+                            dev = {
+                                "kind": "path",
+                                "drop": ["version", "workspace"],
+                                "set": {"package": published[dependency]},
+                            }
+                            if record["base"] == "root":
+                                dev["set"]["path"] = posixpath.relpath(
+                                    crates[dependency]["dir"], crate["dir"]
+                                )
+                            plans.setdefault(member, {}).setdefault(
+                                key, {"kind": "path", "drop": [], "set": {}}
+                            ).setdefault("by_table", {})["dev-dependencies"] = dev
                     continue
 
                 # Git substitutions and publishing blockers are about what we
@@ -350,7 +372,7 @@ def verify_staged(source: Path, before: dict, published: dict, version: str) -> 
                     )
                 # Versionless dev-dependencies are left without one on purpose,
                 # so the check is the same exception the edit made.
-                if not versionless_dev_dep(record) and record.get("version") != version:
+                if not unversioned_dev_dep(record) and record.get("version") != version:
                     problems.append(
                         f"{name}: dependency {key} is version {record.get('version')!r}, "
                         f"expected {version!r}"
@@ -487,6 +509,10 @@ def rewrite_dep_specs(lines: list[str], label: str, plan: dict[str, dict], repor
                 cursor += 1
                 continue
             edit = plan[match.group(1)]
+            # One key can be a normal dependency in one table and a dev
+            # dependency in another, and the two need different rewrites: a
+            # `by_table` entry overrides the plan for its table alone.
+            effective = edit.get("by_table", {}).get(header.split(".")[-1], edit)
             spec = tomllib.loads(f"x = {raw_value(lines, found)}")["x"]
             if not isinstance(spec, dict):
                 # The same key can be declared twice for different targets —
@@ -494,17 +520,17 @@ def rewrite_dep_specs(lines: list[str], label: str, plan: dict[str, dict], repor
                 # under another — and only the git form needs rewriting.
                 cursor = found[1] + 1
                 continue
-            if edit["kind"] == "substitute" and not spec.get("git"):
+            if effective["kind"] == "substitute" and not spec.get("git"):
                 cursor = found[1] + 1
                 continue
-            for dropped in edit["drop"]:
+            for dropped in effective["drop"]:
                 spec.pop(dropped, None)
-            spec.update(edit["set"])
+            spec.update(effective["set"])
             replace_value(lines, found, inline_value(spec))
             report["rewrites"].append({
                 "in": label,
                 "key": match.group(1),
-                "kind": edit["kind"],
+                "kind": effective["kind"],
                 "package": spec.get("package"),
                 "version": spec.get("version"),
             })
