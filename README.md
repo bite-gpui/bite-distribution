@@ -307,7 +307,7 @@ Both lineages stage from a realistic CI checkout. `bite_v1.20.2` was cloned at
 `--depth 1` with tags fetched the way the workflow does, staged to 31 crates at
 `1.20.200` — since amended to `1.20.203` by the hand release (§6) — with 39
 dependency rewrites, 9 git substitutions and 5 licences copied, splitting into 30
-native, 1 wasm-only and 24 with tests; `bite_ce_main` staged to 26 crates, 35
+native, 1 wasm-only and 24 with tests; `bite_ce_main` staged to 26 crates, 54
 rewrites, reporting nine withheld rather than failing (four blocked by `wgsl-rs`,
 five more by depending on them — DESIGN §8).
 
@@ -358,3 +358,8 @@ new *versions* of names that already exist rather than new names — the 30-vers
 burst and one a minute (DESIGN §11), not the five-name burst that made the first
 release take hours. It needs no `0.0.0-reserved` step either, for the same
 reason: every name it depends on is already on the registry.
+
+`bite_ce_main` has published too, at `0.20260928.0`: the seventeen crates its
+closure has left once `wgsl-rs` withholds nine (DESIGN §8), released with
+`allow_partial` declared on the target. The other nine wait on a registry
+version of `wgsl-rs`.

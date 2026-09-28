@@ -132,7 +132,11 @@ What the pipeline does about it is deliberately not "fail":
   ce from four crates withheld to nine: the four, plus `gpui_ce_macos`,
   `gpui_ce_platform`, `gpui_ce_linux`, `gpui_ce_web` and `gpui_ce_gpui_parley`.
   Only real dependencies count; a withheld *dev*-dependency does not stop a crate
-  being published, which is what `no_verify` is for.
+  being published, which is what `no_verify` is for. Staging also makes every
+  dev-dependency on a closure crate versionless, whatever its source declared, so
+  cargo drops it from the published manifest: a version there is what crates.io
+  refuses, because the crate it names is a withheld one or one published later
+  in the same release.
 - **the dry run skips what is withheld**, and prints why.
 - **a release refuses.** `pipeline/publish.py` will not publish a target with withheld
   crates unless `--allow-partial` is passed deliberately: a release is all of its

@@ -20,8 +20,7 @@
 # closure is 16 crates and `gpui_parley`'s is 26 — the whole `gpui_ce_*` platform
 # stack is reached through `gpui_parley`'s optional `gpui_ce_platform` dependency
 # and nothing else reaches it. Dropping it there would quietly stop publishing ten
-# ce crates. The ce lineage is unreleased, so neither arrangement has published
-# anything yet; that root is a thing to fix in the ce branch, not here.
+# ce crates; that root is still a thing to fix in the ce branch, not here.
 #
 # `version` is the upstream release a branch retargets. The version that gets
 # published is derived from it, not equal to it: `1.20.2` publishes as
