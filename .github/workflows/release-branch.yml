@@ -232,12 +232,16 @@ jobs:
     if: inputs.dry_run == false
     runs-on: ubuntu-latest
     steps:
+      # No checkout, and `--repo` is why it works: without either, `gh` resolves
+      # the repository from the working directory's git remote and dies with
+      # `fatal: not a git repository`. Naming the repository is cheaper than a
+      # checkout this job has no other use for.
       - name: Dispatch the release
         env:
           GH_TOKEN: ${{ github.token }}
           TARGET: ${{ needs.resolve.outputs.target }}
         run: |
           set -euo pipefail
-          gh workflow run release.yml --ref main \
+          gh workflow run release.yml --repo "$GITHUB_REPOSITORY" --ref main \
             -f target="$TARGET" -f confirm="$TARGET" -f dry_run=false
           echo "dispatched release.yml for $TARGET"
