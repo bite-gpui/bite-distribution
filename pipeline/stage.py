@@ -202,6 +202,22 @@ def inline_value(value) -> str:
 # --- staging ----------------------------------------------------------------
 
 
+def versionless_dev_dep(record: dict) -> bool:
+    """A path dev-dependency with no version, which cargo strips when packaging.
+
+    The one shape that must not be given a version. A layer crate's doctests are
+    written against the public `gpui` API, so compiling them needs a cycle back
+    to the facade; cargo drops a versionless dev-dependency from the published
+    manifest, which is what keeps that cycle local. Adding a version instead
+    publishes it, and crates.io then refuses the upload with `no known crate
+    named <facade>` because the facade is published later in the same release.
+    """
+    return (
+        record.get("version") is None
+        and record.get("where", "").split(".")[-1] == "dev-dependencies"
+    )
+
+
 def dep_edits(source: Path, crates: dict, names, published: dict, version: str) -> dict:
     """Per-manifest dependency rewrites, for both lineages.
 
@@ -241,10 +257,15 @@ def dep_edits(source: Path, crates: dict, names, published: dict, version: str) 
                 if record["kind"] == "path":
                     dependency = record.get("path_package")
                     if dependency in published:
+                        # The rename always, the version only when the dependency
+                        # is published; see `versionless_dev_dep`.
+                        edits = {"package": published[dependency]}
+                        if not versionless_dev_dep(record):
+                            edits["version"] = version
                         plans.setdefault(target, {})[key] = {
                             "kind": "path",
                             "drop": [],
-                            "set": {"package": published[dependency], "version": version},
+                            "set": edits,
                         }
                     continue
 
@@ -327,7 +348,9 @@ def verify_staged(source: Path, before: dict, published: dict, version: str) -> 
                         f"{name}: dependency {key} names package {record.get('package')!r}, "
                         f"expected {published[dependency]!r}"
                     )
-                if record.get("version") != version:
+                # Versionless dev-dependencies are left without one on purpose,
+                # so the check is the same exception the edit made.
+                if not versionless_dev_dep(record) and record.get("version") != version:
                     problems.append(
                         f"{name}: dependency {key} is version {record.get('version')!r}, "
                         f"expected {version!r}"
