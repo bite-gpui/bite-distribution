@@ -153,6 +153,14 @@ bump; to release new content for a target that is already published, bump its
 workflows of their own, which is what to dispatch directly when only one of them
 is what you are doing.
 
+A target whose closure cannot be published whole declares it, with
+`allow_partial = true` in `targets.toml`. `release.yml` refuses a release that
+loses crates to withholding — a partial upload cannot be withdrawn — and the
+declaration is what turns that refusal off; `bite_ce_main` carries it, because
+`wgsl-rs` has no registry version and takes nine of its crates with it
+(`docs/staging.md` §8). It is a property of the target, so a ce release needs no
+flag and a target that should not be partial cannot become so by accident.
+
 Verification takes minutes and publishing must not wait for it, so verifying the
 target is its own dispatch that leaves the receipt a release reads:
 

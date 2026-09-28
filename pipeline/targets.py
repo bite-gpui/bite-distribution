@@ -131,6 +131,8 @@ def validate(targets: list[dict]) -> list[str]:
                 problems.append(f"{where}: {disagreement}")
         if not isinstance(target.get("amendment", 0), int):
             problems.append(f"{where}: amendment must be an integer")
+        if not isinstance(target.get("allow_partial", False), bool):
+            problems.append(f"{where}: allow_partial must be a boolean")
         if not target.get("url", "").startswith("https://"):
             problems.append(f"{where}: url must be https (CI clones it unauthenticated)")
         if not target.get("branch", "").startswith("bite_"):
@@ -411,6 +413,7 @@ def emit_env(target: dict) -> list[str]:
         f"lineage={target['lineage']}",
         f"upstream={target.get('upstream', '')}",
         f"amendment={target.get('amendment', 0)}",
+        f"allow_partial={'true' if target.get('allow_partial', False) else 'false'}",
         f"version={version_for(target, None)}",
     ]
 

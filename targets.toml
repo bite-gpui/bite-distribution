@@ -213,6 +213,14 @@ version_from = "calver"
 
 # The community-edition lineage shares the main repository and publishes the
 # `bite-gp-ce-*` family, with `bite-gpui-ce` as its facade.
+#
+# `allow_partial` because this lineage cannot be published whole. Four crates
+# reach `wgsl-rs` as a git dependency with no registry version and five more are
+# withheld for depending on them, so staging reports nine and the seventeen that
+# remain are the release (docs/staging.md §8). It is declared here rather than
+# passed as a flag because it is a property of the lineage and not of a run: ce
+# would need the flag on every dispatch, and a release that forgot it would fail
+# after a verification rather than before one.
 [[target]]
 name = "bite_ce_main"
 repo = ".tools/worktrees/wt-ce"
@@ -220,3 +228,4 @@ branch = "bite_ce_main"
 lineage = "ce"
 roots = ["gpui-ce", "gpui_parley"]
 version_from = "calver"
+allow_partial = true

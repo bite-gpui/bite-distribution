@@ -29,6 +29,14 @@
 # crates.io rejects — where the minutes they take are the thing being waited on
 # and not what is being tested. `require_verify: false` publishes without the
 # receipt, for when the receipt itself is what is broken; it says so loudly.
+#
+# A target may declare that it can only be published in part, with
+# `allow_partial` in `targets.toml`. `publish.py` refuses a release that loses
+# crates to withholding, because a partial upload cannot be withdrawn, and that
+# declaration is what turns the refusal off for a lineage that cannot be
+# published whole — ce, whose `wgsl-rs` dependency has no registry version. It
+# is a property of the target rather than a dispatch input for the same reason a
+# target's version is: it does not change between runs.
 name: Release
 
 run-name: ${{ github.event.inputs.dry_run == 'false' && format('Release {0}', github.event.inputs.target) || format('Dry run {0}', github.event.inputs.target) }}
@@ -105,6 +113,10 @@ jobs:
       # An output is unambiguously available at job level, where the `inputs`
       # context is not, so the inputs the publish job needs are passed through.
       only: ${{ inputs.only }}
+      # From the table, not a dispatch input: whether a target can be published
+      # whole is a property of the target (targets.toml). `prepare` resolves it
+      # with the rest and the publish reads it here.
+      allow_partial: ${{ steps.resolve.outputs.allow_partial }}
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v5
@@ -121,7 +133,7 @@ jobs:
         run: |
           set -euo pipefail
           # Emits target=, repository=, branch=, lineage=, upstream=,
-          # amendment= and version= for $GITHUB_OUTPUT.
+          # amendment=, allow_partial= and version= for $GITHUB_OUTPUT.
           python3 pipeline/targets.py --env "$INPUT_TARGET" >> "$GITHUB_OUTPUT"
 
       - name: Refuse an unconfirmed publish
@@ -173,6 +185,7 @@ jobs:
           TARGET: ${{ steps.resolve.outputs.target }}
           VERSION: ${{ steps.resolve.outputs.version }}
           ONLY: ${{ inputs.only }}
+          ALLOW_PARTIAL: ${{ steps.resolve.outputs.allow_partial }}
         run: |
           # Compared as a shell string because it arrives either way: a dispatch
           # boolean may be a boolean or a string, and interpolating gives
@@ -184,6 +197,11 @@ jobs:
           fi
           if [ -n "$ONLY" ]; then
             echo "::notice title=partial release::only $ONLY will be published"
+          fi
+          # A different thing from `only`: withheld crates the target declares,
+          # not a chosen subset of a whole release.
+          if [ "$ALLOW_PARTIAL" = "true" ]; then
+            echo "::warning title=withheld crates::$TARGET declares allow_partial, so a partial release is deliberate"
           fi
 
   publish:
@@ -271,11 +289,19 @@ jobs:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
           TARGET: ${{ needs.prepare.outputs.target }}
           ONLY: ${{ needs.prepare.outputs.only }}
+          # The withheld crates a target declares (targets.toml). Without this
+          # `publish.py` refuses a target that loses crates to withholding, which
+          # is the right default: a partial upload cannot be withdrawn.
+          ALLOW_PARTIAL: ${{ needs.prepare.outputs.allow_partial }}
         run: |
           set -o pipefail
           args=(--stage src)
           if [ -n "$ONLY" ]; then
             args+=(--only "$ONLY")
+          fi
+          if [ "$ALLOW_PARTIAL" = "true" ]; then
+            echo "::warning title=withheld crates::$TARGET publishes a partial closure by declaration"
+            args+=(--allow-partial)
           fi
           python3 pipeline/publish.py "${args[@]}" 2>&1 | tee publish.log
 

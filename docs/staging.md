@@ -137,7 +137,10 @@ What the pipeline does about it is deliberately not "fail":
 - **a release refuses.** `pipeline/publish.py` will not publish a target with withheld
   crates unless `--allow-partial` is passed deliberately: a release is all of its
   crates or none of them, and a partial one published by accident cannot be
-  withdrawn.
+  withdrawn. A lineage that is permanently in that state declares it once, as
+  `allow_partial = true` on its target in `targets.toml`; `release.yml` then reads
+  it from the table and passes the flag, so the release is still one command and
+  the partial set is a property of the target rather than a flag to remember.
 
 A branch-level failure that hides a release's worth of checking is worse than a
 warning that names nine.
