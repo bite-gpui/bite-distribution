@@ -30,7 +30,7 @@
 #
 # Every target lives in one repository, so it is named once here and a target
 # may still override it with its own `url`. `branch` is what distinguishes a
-# target. Ten of the branches descend from zed releases, `bite_master` from zed's
+# target. Thirteen of the branches descend from zed releases, `bite_master` from zed's
 # main, and `bite_ce_main` from the community edition's fork point — shared
 # ancestry, diverged surface, which is exactly why the lineage has to be
 # declared rather than inferred.
@@ -183,10 +183,10 @@ upstream = "1.21.0"
 # rebased from.
 amendment = 0
 
-# Upstream's preview tag, with the rearchitecture replayed onto it. Usually a
-# preview line precedes the release of the same number, and `bite_v1.21.0`
-# supersedes `bite_v1.21.0-pre` the same way; this one exists because 1.22 has
-# not been released yet.
+# Upstream's preview tag, with the rearchitecture replayed onto it. A preview
+# line precedes the release of the same number, and `bite_v1.22.0` supersedes it
+# the same way `bite_v1.21.0` superseded `bite_v1.21.0-pre`; kept here as a line
+# to back-port onto, now that 1.22 is released.
 [[target]]
 name = "bite_v1.22.0-pre"
 repo = "."
@@ -198,6 +198,38 @@ upstream = "1.22.0-pre"
 # Clean: the three fixes the older lines each needed (the embedded fonts, the
 # trace-state test race, the vendored shader sources) were already commits on
 # the preview branch this line was replayed from.
+amendment = 0
+
+# Upstream's 1.22.0 release, with the rearchitecture replayed onto it. Replayed
+# from `bite_v1.22.0-pre`, so its fixes were already commits on that branch.
+[[target]]
+name = "bite_v1.22.0"
+repo = "."
+branch = "bite_v1.22.0"
+lineage = "zed"
+roots = ["gpui"]
+version_from = "release-tag"
+upstream = "1.22.0"
+amendment = 0
+
+[[target]]
+name = "bite_v1.23.0-pre"
+repo = "."
+branch = "bite_v1.23.0-pre"
+lineage = "zed"
+roots = ["gpui"]
+version_from = "release-tag"
+upstream = "1.23.0-pre"
+amendment = 0
+
+[[target]]
+name = "bite_v1.23.1-pre"
+repo = "."
+branch = "bite_v1.23.1-pre"
+lineage = "zed"
+roots = ["gpui"]
+version_from = "release-tag"
+upstream = "1.23.1-pre"
 amendment = 0
 
 # Rolling tip. No upstream release tag is reachable from it, so it publishes on
