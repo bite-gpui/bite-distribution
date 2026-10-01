@@ -56,6 +56,9 @@ on:
           - bite_v1.14.x
           - bite_master
           - bite_ce_main
+          - bite_v1.22.0
+          - bite_v1.23.0-pre
+          - bite_v1.23.1-pre
         required: true
       dry_run:
         description: 'resolve and report only — do not tag, verify or release'
