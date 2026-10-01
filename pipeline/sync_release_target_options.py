@@ -141,7 +141,9 @@ def main(argv: list[str]) -> int:
     args = parser.parse_args(argv)
 
     table = targets.load()
-    problems = targets.validate(table)
+    # The selectors are what this script rewrites, so they must not gate it: validate
+    # the table's own shape, not its agreement with the files this run is about to fix.
+    problems = targets.validate(table, selectors=False)
     if problems:
         for problem in problems:
             print(f"FAIL {problem}", file=sys.stderr)

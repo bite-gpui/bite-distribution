@@ -103,7 +103,7 @@ def load() -> list[dict]:
     return table["target"]
 
 
-def validate(targets: list[dict]) -> list[str]:
+def validate(targets: list[dict], *, selectors: bool = True) -> list[str]:
     problems: list[str] = []
     seen: set[str] = set()
     for index, target in enumerate(targets):
@@ -143,7 +143,8 @@ def validate(targets: list[dict]) -> list[str]:
                 "bite_v<M>.<m>.<patch|x>, its -pre preview, bite_master, "
                 "bite_ce_main or bite_ce_v<M>.<m>.<patch|x>"
             )
-    problems.extend(selector_problems(targets))
+    if selectors:
+        problems.extend(selector_problems(targets))
     return problems
 
 
@@ -471,6 +472,15 @@ def main(argv: list[str]) -> int:
     args = parser.parse_args(argv)
 
     targets = load()
+
+    # `--repository` is a plain read: it needs the table loaded, not a table that is
+    # in step with the dispatch selectors. The sync workflow drives the selector sync
+    # from it, and that workflow has to run while the selectors are *out* of step —
+    # which is exactly when `validate` below fails.
+    if args.repository:
+        print(repository_slug(targets[0]))
+        return 0
+
     problems = validate(targets)
     if problems:
         for problem in problems:
@@ -478,10 +488,6 @@ def main(argv: list[str]) -> int:
         return 1
     if args.validate:
         print(f"{len(targets)} targets, no problems")
-        return 0
-
-    if args.repository:
-        print(repository_slug(targets[0]))
         return 0
 
     if args.refs:
