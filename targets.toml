@@ -176,12 +176,15 @@ lineage = "zed"
 roots = ["gpui"]
 version_from = "release-tag"
 upstream = "1.21.0"
-# Nothing yet, and it is the first line to start clean: the branch is upstream's
-# 1.21.0 release with the rearchitecture replayed onto it, and the three fixes
-# the older lines each needed (the embedded fonts, the trace-state test race, the
-# vendored shader sources) were already commits on the preview branch it was
-# rebased from.
-amendment = 0
+# One fix so far, the first new content on this line, which DESIGN §6 charges
+# the next amendment: `gpui_windows`' dialog module imported
+# `gpui::ForegroundExecutor`, but the backend has no `gpui` dependency and the
+# type lives in `gpui_platform`. The crate is `#![cfg(target_os = "windows")]`,
+# so no Linux gate ever compiled it and the break only showed when the
+# published `bite-gpui-windows` was built on Windows; the fix is the one the
+# newer lines already carry (5b0050256b). The three fixes the older lines each
+# needed were already commits on the preview branch this line was rebased from.
+amendment = 1
 
 # Upstream's preview tag, with the rearchitecture replayed onto it. A preview
 # line precedes the release of the same number, and `bite_v1.22.0` supersedes it
