@@ -235,6 +235,21 @@ version_from = "release-tag"
 upstream = "1.23.1-pre"
 amendment = 0
 
+# The rolling 1.23 line: replayed onto upstream's `v1.23.x` release branch (the
+# `v1.23.3` tip), not a single preview tag, so it stays on the 1.23 patch series.
+# `version_from = "release-tag"` fixes the published version from `upstream` and
+# `amendment`, so a roll onto a newer 1.23 patch bumps `upstream` (1.23.3 ->
+# 1.23.4 gives 1.23.400) and a source fix on the same patch bumps `amendment`.
+[[target]]
+name = "bite_v1.23.x"
+repo = "."
+branch = "bite_v1.23.x"
+lineage = "zed"
+roots = ["gpui"]
+version_from = "release-tag"
+upstream = "1.23.3"
+amendment = 0
+
 # Rolling tip. No upstream release tag is reachable from it, so it publishes on
 # the CalVer series instead of borrowing a release number it does not have.
 [[target]]
