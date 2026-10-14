@@ -55,13 +55,16 @@ APACHE = "Apache-2.0"
 
 # Git dependencies that have a crates.io equivalent, keyed by the package name
 # the dependency resolves to. Measured against the registry; see DESIGN.md §8.
+# `proptest` is pinned exactly: its git revision tracks `rand 0.9`, the
+# workspace's `rand`, and the caret range `1.11.0` floats to `1.12.0`, which
+# moved to `rand 0.10` and so fails to satisfy the `rand 0.9` the tests use.
 GIT_SUBSTITUTES = {
     "zed-font-kit": "0.14.1-zed",
     "zed-scap": "0.0.8-zed",
     "zed-xim": "0.4.0-zed",
     "calloop": "0.14.4",
     "wasm_thread": "0.3.3",
-    "proptest": "1.11.0",
+    "proptest": "=1.11.0",
     "async-tar": "0.6.1",
 }
 
