@@ -99,7 +99,7 @@ fn renders_without_a_display(cx: &mut TestAppContext) {
 ## Provenance and licence
 
 Derived from Zed's gpui: restructured, renamed and published as `@CRATE@` under `@LICENSE@`.
-`NOTICE` records the modifications the licence asks to be made prominent, and `LICENSE-*` carries
+@NOTICE@`LICENSE-*` carries
 the licence text.
 
     source:   @REPOSITORY@

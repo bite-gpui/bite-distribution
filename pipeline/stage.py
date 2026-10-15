@@ -782,6 +782,14 @@ def stage(target: dict, source: Path, report_path: Path | None, strict: bool = F
                 "CRATE": published[package],
                 "ORIGINAL": package,
                 "LICENSE": license_id,
+                # `write_notice` writes a NOTICE exactly when the licence starts with
+                # Apache, so the README may only claim one on the same condition. The
+                # two are one fact, and they are read from one place rather than restated.
+                "NOTICE": (
+                    "`NOTICE` records the modifications the licence asks to be made prominent, and "
+                    if (license_id or "").startswith(APACHE)
+                    else ""
+                ),
                 # The facade *is* the whole stack, so a second `cargo add` of it would
                 # be a line telling a reader to do what the line above already did.
                 "FACADE_ADD": (
