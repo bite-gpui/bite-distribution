@@ -249,6 +249,11 @@ amendment = 0
 # into the project's grouped form. That left the tree unchanged -- the crates this
 # publishes are byte-identical to 1.23.300's -- but `bite_1.23.300` names the old
 # commit and a tag cannot move, so the line still carries the next version.
+#
+# Amendment 2: every published crate now carries this project's README, over
+# upstream's -- which sent a reader to Zed's repository, website and Discord -- and
+# names it in `[package] readme`. Staging writes it, so it is new content on a
+# release that is already published, which is what DESIGN §6 charges this for.
 [[target]]
 name = "bite_v1.23.x"
 repo = "."
@@ -257,7 +262,7 @@ lineage = "zed"
 roots = ["gpui"]
 version_from = "release-tag"
 upstream = "1.23.3"
-amendment = 1
+amendment = 2
 
 # Rolling tip. No upstream release tag is reachable from it, so it publishes on
 # the CalVer series instead of borrowing a release number it does not have.
