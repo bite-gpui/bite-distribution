@@ -244,6 +244,11 @@ amendment = 0
 # `version_from = "release-tag"` fixes the published version from `upstream` and
 # `amendment`, so a roll onto a newer 1.23 patch bumps `upstream` (1.23.3 ->
 # 1.23.4 gives 1.23.400) and a source fix on the same patch bumps `amendment`.
+#
+# Amendment 1: the surface work (`#9`/`#10`) was re-cut from two squashed PR commits
+# into the project's grouped form. That left the tree unchanged -- the crates this
+# publishes are byte-identical to 1.23.300's -- but `bite_1.23.300` names the old
+# commit and a tag cannot move, so the line still carries the next version.
 [[target]]
 name = "bite_v1.23.x"
 repo = "."
@@ -252,7 +257,7 @@ lineage = "zed"
 roots = ["gpui"]
 version_from = "release-tag"
 upstream = "1.23.3"
-amendment = 0
+amendment = 1
 
 # Rolling tip. No upstream release tag is reachable from it, so it publishes on
 # the CalVer series instead of borrowing a release number it does not have.
