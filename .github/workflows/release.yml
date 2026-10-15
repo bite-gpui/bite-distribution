@@ -62,10 +62,10 @@ on:
           - bite_v1.14.x
           - bite_master
           - bite_ce_main
-          - bite_v1.22.0
           - bite_v1.23.0-pre
           - bite_v1.23.1-pre
           - bite_v1.23.x
+          - bite_v1.22.x
         required: true
       confirm:
         description: 'repeat the target name to confirm a real publish'

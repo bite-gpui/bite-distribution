@@ -203,12 +203,16 @@ upstream = "1.22.0-pre"
 # the preview branch this line was replayed from.
 amendment = 0
 
-# Upstream's 1.22.0 release, with the rearchitecture replayed onto it. Replayed
-# from `bite_v1.22.0-pre`, so its fixes were already commits on that branch.
+# The 1.22 line: replayed onto upstream's `v1.22.x` release branch, not a single
+# release tag, so it stays on the 1.22 patch series. `upstream` is the release the
+# branch currently descends from, so a roll onto the next 1.22 patch bumps `upstream`
+# (1.22.0 -> 1.22.1 gives 1.22.100) and a source fix on the same patch bumps
+# `amendment`. It supersedes `bite_v1.22.0`, which was never released (no
+# `bite_1.22.0` tag), and keeps that line's `1.22.0` mapping.
 [[target]]
-name = "bite_v1.22.0"
+name = "bite_v1.22.x"
 repo = "."
-branch = "bite_v1.22.0"
+branch = "bite_v1.22.x"
 lineage = "zed"
 roots = ["gpui"]
 version_from = "release-tag"
