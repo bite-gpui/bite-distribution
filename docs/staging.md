@@ -39,8 +39,9 @@ it keeps cargo itself as the source of truth.
    set inherit zed's workspace default) and flip the workspace default to true.
 6. **Set the metadata** every published crate needs: `repository` and `homepage`
    (the project's repository and site, from `targets.toml`, so a crates.io page links
-   here rather than to upstream's `https://gpui.rs`), and a `description` only where
-   the source had none ([§13.5](decisions.md)).
+   here rather than to upstream's `https://gpui.rs`), a `description` only where
+   the source had none, and `readme` naming the README this step writes
+   ([§13.5](decisions.md)).
 7. **Rewrite every reference to a renamed crate**, in every manifest of the
    checkout, not only the set's. Cargo resolves the whole workspace, so a
    crate that depends on a renamed one but is not itself published has to keep
@@ -54,10 +55,21 @@ it keeps cargo itself as the source of truth.
 9. **License and provenance** (§9).
 10. **Re-read the result and check it** (`verify_staged`): every renamed crate
     carries the right name, version and lib name; every dependency on one
-    resolves to the published name and version; and **no manifest anywhere still
-    names a package that was renamed**. That last check is what would have caught
+    resolves to the published name and version; every published crate names its
+    README and carries the file; and **no manifest anywhere still names a package
+    that was renamed**. That last check is what would have caught
     the `gpui_ce_elements` failure before the resolver did. A crate with no name
     in the naming rule is fatal; a withheld crate (§8) is reported, not fatal.
+
+The README is written rather than inherited. Upstream's sends a reader to Zed's
+repository, website and Discord, and 29 of the 30 crates in the 1.23 closure carry
+none at all, so a crates.io page for this build either pointed at the wrong project or
+showed nothing. Every published crate gets this project's instead — where the site is,
+the four quickstart examples the site shows, the guides, and the crate's own provenance
+— rendered from `pipeline/readme_template.md`, which is why the prose sits beside the
+scripts rather than inside one. Two of its tokens are the facade's name and the Parley
+crate's, both taken from `naming.py` rather than from the closure, so a target that
+publishes neither still tells a reader the right name to add.
 
 The report is the handoff: `pipeline/publish.py` reads it for the order, names and
 versions, so the two scripts cannot disagree about what is being released.

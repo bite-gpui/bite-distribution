@@ -34,6 +34,8 @@ pipeline/        the release pipeline, run in order
   inventory.py     the GPUI crates set a checkout reaches, and the publish order
   naming.py        source package → published crate name, verified per target
   stage.py         carve a target into a publishable state
+  readme_template.md
+                   the README staging writes over every published crate's
   publish.py       publish a staged target, in dependency order
   tag_release.py   resolve a branch to the tag it must carry, push it
   sync_release_target_options.py
@@ -92,7 +94,7 @@ being released.
 | `pipeline/inventory.py` | resolves the GPUI crates set a checkout reaches by path dependency, and the publish order |
 | `pipeline/naming.py` | source package → published crate name; `--verify` checks it per target |
 | `pipeline/targets.py` | validates and selects targets; `--tags` says what to tag, `--for-tag` and `--for-branch` resolve the other way, `--matrix` and `--env` feed CI |
-| `pipeline/stage.py` | carves a target into a publishable state |
+| `pipeline/stage.py` | carves a target into a publishable state: dependency rewrites, metadata, licence, NOTICE, and this project's README |
 | `pipeline/tag_release.py` | resolves a branch to the tag it must carry, refuses to move one, pushes it |
 | `pipeline/sync_release_target_options.py` | rewrites the dispatch `options:` lists from the table and a branch list, filtered to release branches; `--check` reports drift |
 | `pipeline/publish.py` | publishes a staged target in dependency order |

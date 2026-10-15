@@ -17,6 +17,8 @@ crate:
 - `[package] version` -> the version the branch's release tag names (§6);
 - `[package] repository` and `[package] homepage` -> the project's repository and
   site, so a crates.io page links back here rather than to upstream;
+- a README over the source's, because upstream's sends a reader to Zed's repository,
+  website and Discord and most crates in the closure carry none at all;
 - crate-level `publish = false` removed, workspace default raised to true
   (zed's root sets `publish = false`, which 11 of the 1.14 closure inherit);
 - `[workspace.dependencies]` entries for closure crates gain `package` and
@@ -363,6 +365,14 @@ def verify_staged(source: Path, before: dict, published: dict, version: str) -> 
             )
         if not inventory.publishable(staged):
             problems.append(f"{name}: still marked unpublishable ({staged['publish']!r})")
+        # The README is written into the crate, and named, so that a package cannot
+        # carry upstream's or point outside itself. Read back rather than trusted,
+        # like everything else here.
+        readme = staged["readme"]
+        if readme != "README.md" or not (source / staged["dir"] / readme).is_file():
+            problems.append(
+                f"{name}: readme is {readme!r} and the crate does not carry it"
+            )
         for key, records in staged["deps"].items():
             for record in records:
                 dependency = record.get("path_package")
@@ -583,6 +593,42 @@ def write_notice(crate_dir: Path, target: dict, version: str, license_id: str | 
     )
 
 
+# `@NAME@`, so a token is unmistakable in a template that also carries Rust
+# examples — one of which has a brace in it.
+README_TOKEN = re.compile(r"@[A-Z][A-Z_]*@")
+
+README_TEMPLATE = HERE / "readme_template.md"
+
+
+def render_readme(values: dict[str, str]) -> str:
+    """Fill the README template, and refuse to leave a token behind.
+
+    `str.replace`, not `str.format`: the template carries Rust examples, and a
+    brace in one of them is not a placeholder. A token that survives the fill is a
+    typo in the template, which is fatal here rather than published.
+    """
+    text = README_TEMPLATE.read_text()
+    for token, value in values.items():
+        text = text.replace(f"@{token}@", value)
+    left = sorted(set(README_TOKEN.findall(text)))
+    if left:
+        raise SystemExit(f"readme template still names {', '.join(left)}")
+    return text
+
+
+def write_readme(crate_dir: Path, values: dict[str, str]) -> None:
+    """Replace whatever README the source carried.
+
+    Only `gpui` has one, and it points at Zed's repository, website and Discord;
+    a crates.io page for this build either sent a reader upstream or, for 29 of
+    the 30 crates, showed nothing at all. What ships instead names this project
+    and its site, shows the four quickstart examples the site shows, and records
+    the crate's own provenance. Built from a template beside this script so the
+    prose is not buried in it.
+    """
+    (crate_dir / "README.md").write_text(render_readme(values))
+
+
 def stage(target: dict, source: Path, report_path: Path | None, strict: bool = False) -> int:
     source = source.expanduser().resolve()
     if not (source / "Cargo.toml").exists():
@@ -664,6 +710,23 @@ def stage(target: dict, source: Path, report_path: Path | None, strict: bool = F
         root_lines, "Cargo.toml (workspace)", plans.get(root_manifest, {}), report
     )
 
+    # What every published crate's README says about the project rather than about
+    # the crate, so it is built once and only the crate-specific tokens are added
+    # per crate. The facade and the text-engine swap are named from the naming rule
+    # rather than from the closure, so a target that does not publish one of them
+    # still tells a reader the right name to add.
+    lineage = target["lineage"]
+    facade = naming.published_name(naming.FACADES[lineage], lineage)
+    readme_values = {
+        "SITE": target["homepage"].rstrip("/"),
+        "REPOSITORY": target["url"].removesuffix(".git"),
+        "PARLEY": naming.published_name("gpui_parley", lineage),
+        "BRANCH": target["branch"],
+        "UPSTREAM": f"  (upstream {upstream})" if upstream else "",
+        "VERSION": version,
+        "COMMIT": commit,
+    }
+
     for package in order:
         crate = crates[package]
         crate_dir = source / crate["dir"]
@@ -692,6 +755,10 @@ def stage(target: dict, source: Path, report_path: Path | None, strict: bool = F
         # rather than to Zed's. `set_key` replaces rather than fills, which is why it is
         # unconditional here where the description below is not.
         set_key(lines, "package", "homepage", json.dumps(target["homepage"]))
+        # Named, not left to cargo's auto-detection: the source's `readme` can point
+        # at a file outside the crate, which nothing outside the crate can package,
+        # and the one the crate ships is the one written below.
+        set_key(lines, "package", "readme", json.dumps("README.md"))
 
         rewrite_dep_specs(lines, f"{crate['dir']}/Cargo.toml", plans.get(manifest, {}), report)
 
@@ -708,6 +775,22 @@ def stage(target: dict, source: Path, report_path: Path | None, strict: bool = F
 
         copied = copy_license(source, crate_dir, license_id)
         write_notice(crate_dir, {**target, "upstream": upstream}, version, license_id)
+        write_readme(
+            crate_dir,
+            {
+                **readme_values,
+                "CRATE": published[package],
+                "ORIGINAL": package,
+                "LICENSE": license_id,
+                # The facade *is* the whole stack, so a second `cargo add` of it would
+                # be a line telling a reader to do what the line above already did.
+                "FACADE_ADD": (
+                    ""
+                    if published[package] == facade
+                    else f"\n# the whole stack, behind one facade\ncargo add {facade}\n"
+                ),
+            },
+        )
         if copied:
             report["licensed"].append({"crate": published[package], "file": copied})
 
@@ -719,6 +802,7 @@ def stage(target: dict, source: Path, report_path: Path | None, strict: bool = F
                 "lib": crate["lib_name"],
                 "dir": crate["dir"],
                 "license": license_id,
+                "readme": "README.md",
                 "tests": crate_has_tests(crate_dir),
             }
         )
