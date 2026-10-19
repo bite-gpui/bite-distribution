@@ -254,6 +254,14 @@ amendment = 0
 # upstream's -- which sent a reader to Zed's repository, website and Discord -- and
 # names it in `[package] readme`. Staging writes it, so it is new content on a
 # release that is already published, which is what DESIGN §6 charges this for.
+#
+# Amendment 3: the GPU work the interop stack needs -- the application's
+# `GpuPreference` (with enumeration on Linux, Windows and macOS, and the `GpuId`
+# split into permanent identity and session handle), the dma-buf capabilities the
+# renderer can import with its transfer function, and the headless host-driven
+# frame seam (`Window::present`, the offscreen surface handle and the headless
+# renderer factory). `gpui_wgpu` also lends the window's device to an embedded
+# engine at the adapter's limits, and `gpui_interop` 0.1 needs all of it.
 [[target]]
 name = "bite_v1.23.x"
 repo = "."
@@ -262,7 +270,7 @@ lineage = "zed"
 roots = ["gpui"]
 version_from = "release-tag"
 upstream = "1.23.3"
-amendment = 2
+amendment = 3
 
 # Rolling tip. No upstream release tag is reachable from it, so it publishes on
 # the CalVer series instead of borrowing a release number it does not have.
