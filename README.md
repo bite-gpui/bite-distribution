@@ -365,3 +365,13 @@ reason: every name it depends on is already on the registry.
 closure has left once `wgsl-rs` withholds nine (DESIGN §8), released with
 `allow_partial` declared on the target. The other nine wait on a registry
 version of `wgsl-rs`.
+
+`bite_v1.23.x` has published at `1.23.305` — the GPU work the interop stack needs:
+the application's `GpuPreference` with per-backend enumeration, the `GpuId` split
+into permanent identity and session handle, dma-buf capability and
+transfer-function reporting, and the headless host-driven frame seam. Verification
+found two source defects on the way, each fixed on the branch and each charged the
+next amendment (DESIGN §6): a dma-buf test that asserted a Vulkan device on an image
+that has no Vulkan driver, and an import used only by the headless feature set that
+failed the isolated default-feature build. `bite_1.23.303` and `bite_1.23.304` name
+those intermediate tips and were not published; `bite_1.23.305` is the release.
