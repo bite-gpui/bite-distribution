@@ -267,6 +267,11 @@ amendment = 0
 # image that installs `libvulkan1` but no driver, where every other test in the file
 # skips for the same reason. It skips now. A source fix on a release branch, so it
 # takes the next amendment (DESIGN §6).
+#
+# Amendment 5: the isolated packaged build then caught an unconditional
+# `std::any::Any` import that only the headless-gated code uses, so the default-feature
+# build failed `-D warnings`. The import is gated to its use. Another source fix on a
+# release branch, so another amendment.
 [[target]]
 name = "bite_v1.23.x"
 repo = "."
@@ -275,7 +280,7 @@ lineage = "zed"
 roots = ["gpui"]
 version_from = "release-tag"
 upstream = "1.23.3"
-amendment = 4
+amendment = 5
 
 # Rolling tip. No upstream release tag is reachable from it, so it publishes on
 # the CalVer series instead of borrowing a release number it does not have.
