@@ -262,6 +262,11 @@ amendment = 0
 # frame seam (`Window::present`, the offscreen surface handle and the headless
 # renderer factory). `gpui_wgpu` also lends the window's device to an embedded
 # engine at the adapter's limits, and `gpui_interop` 0.1 needs all of it.
+#
+# Amendment 4: verification found one of those tests asserting a Vulkan device on an
+# image that installs `libvulkan1` but no driver, where every other test in the file
+# skips for the same reason. It skips now. A source fix on a release branch, so it
+# takes the next amendment (DESIGN §6).
 [[target]]
 name = "bite_v1.23.x"
 repo = "."
@@ -270,7 +275,7 @@ lineage = "zed"
 roots = ["gpui"]
 version_from = "release-tag"
 upstream = "1.23.3"
-amendment = 3
+amendment = 4
 
 # Rolling tip. No upstream release tag is reachable from it, so it publishes on
 # the CalVer series instead of borrowing a release number it does not have.
