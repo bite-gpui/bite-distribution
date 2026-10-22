@@ -71,6 +71,12 @@ GIT_SUBSTITUTES = {
 }
 
 HEADER_RE = re.compile(r"^\[\s*([^\]]+?)\s*\]\s*(?:#.*)?$")
+# An array-of-tables header (`[[bin]]`, `[[example]]`) also ends the table above
+# it. `HEADER_RE` deliberately does not match it, so the span scan has to name
+# it separately: a `[lib]` table followed by a `[[bin]]` would otherwise run to
+# the end of the file, and `set_key(lines, "lib", "name", …)` would find (and
+# rewrite) the bin's `name` instead of adding the lib's.
+ARRAY_HEADER_RE = re.compile(r"^\[\s*\[.*\]\s*\]\s*(?:#.*)?$")
 KEY_RE = re.compile(r"^\s*([A-Za-z0-9_\-]+)\s*(?:\.\s*([A-Za-z0-9_\-]+)\s*)?=")
 
 # Crates whose native build is not a configuration the project supports, so a
@@ -109,11 +115,11 @@ def table_span(lines: list[str], header: str) -> tuple[int, int] | None:
     start = None
     for index, line in enumerate(lines):
         match = HEADER_RE.match(line)
-        if not match:
+        if not match and not ARRAY_HEADER_RE.match(line):
             continue
         if start is not None:
             return (start, index - 1)
-        if match.group(1) == header:
+        if match and match.group(1) == header:
             start = index
     if start is None:
         return None
