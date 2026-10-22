@@ -9,6 +9,8 @@ jobs:
   check:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v5
+
       - name: Inspect the token
         env:
           TOKEN: ${{ secrets.SOURCE_WRITE_TOKEN }}
