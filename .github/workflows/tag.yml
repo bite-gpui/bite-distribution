@@ -54,6 +54,7 @@ on:
           - bite_v1.23.1-pre
           - bite_v1.23.x
           - bite_v1.22.x
+          - bite_v1.24.x
         required: true
       dry_run:
         description: 'resolve and report only — do not push a tag or publish'
