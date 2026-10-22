@@ -375,3 +375,14 @@ next amendment (DESIGN §6): a dma-buf test that asserted a Vulkan device on an 
 that has no Vulkan driver, and an import used only by the headless feature set that
 failed the isolated default-feature build. `bite_1.23.303` and `bite_1.23.304` name
 those intermediate tips and were not published; `bite_1.23.305` is the release.
+
+`bite_v1.24.x` has published at `1.24.400` — the `v1.24.4` base, with the same 30
+crates as the 1.23 line. Verification (stage, closure checks, packaged artifacts and
+the Apple cbindgen step on Linux) found three source defects in the replayed tree,
+each fixed on the branch: the frame journaling dropped by the Window split, an
+example reaching the entry points through `gpui_platform`, and a test field the
+split left flat. The tag push in `release-branch.yml` failed because
+`SOURCE_WRITE_TOKEN` is not authorized to write `bite-gpui/bite-gpui`; the tag was
+pushed by hand and `verify.yml`/`release.yml` were dispatched directly. Replace that
+secret before the next release. The rollout record is `bite-tools`'
+`docs/journal/v124x-roll-2026-10-22.md`.
