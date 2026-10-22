@@ -381,8 +381,7 @@ crates as the 1.23 line. Verification (stage, closure checks, packaged artifacts
 the Apple cbindgen step on Linux) found three source defects in the replayed tree,
 each fixed on the branch: the frame journaling dropped by the Window split, an
 example reaching the entry points through `gpui_platform`, and a test field the
-split left flat. The tag push in `release-branch.yml` failed because
-`SOURCE_WRITE_TOKEN` is not authorized to write `bite-gpui/bite-gpui`; the tag was
-pushed by hand and `verify.yml`/`release.yml` were dispatched directly. Replace that
-secret before the next release. The rollout record is `bite-tools`'
-`docs/journal/v124x-roll-2026-10-22.md`.
+split left flat. The first tag push failed because `SOURCE_WRITE_TOKEN` held only read access to
+`bite-gpui/bite-gpui`; after it was granted `Contents: Read and write` the whole
+flow was re-run from untagged and `release-branch.yml` pushed the tag itself. The
+rollout record is `bite-tools`' `docs/journal/v124x-roll-2026-10-22.md`.
