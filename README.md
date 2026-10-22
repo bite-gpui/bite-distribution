@@ -376,8 +376,9 @@ that has no Vulkan driver, and an import used only by the headless feature set t
 failed the isolated default-feature build. `bite_1.23.303` and `bite_1.23.304` name
 those intermediate tips and were not published; `bite_1.23.305` is the release.
 
-`bite_v1.24.x` has published at `1.24.400` — the `v1.24.4` base, with the same 30
-crates as the 1.23 line. Verification (stage, closure checks, packaged artifacts and
+`bite_v1.24.x` has published at `1.24.401` — the `v1.24.4` base, with the same 30
+crates as the 1.23 line. `1.24.400` was the first release; `1.24.401` adds the
+Windows `open_window` fix below. Verification (stage, closure checks, packaged artifacts and
 the Apple cbindgen step on Linux) found three source defects in the replayed tree,
 each fixed on the branch: the frame journaling dropped by the Window split, an
 example reaching the entry points through `gpui_platform`, and a test field the
@@ -386,8 +387,9 @@ split left flat. The first tag push failed because `SOURCE_WRITE_TOKEN` held onl
 flow was re-run from untagged and `release-branch.yml` pushed the tag itself. The
 rollout record is `bite-tools`' `docs/journal/v124x-roll-2026-10-22.md`.
 
-`bite_v1.25.x` has published at `1.25.201` — the `v1.25.2` base, with the same 30
-crates as the 1.24 line. Upstream 1.25 pins `wgpu` to a git revision, and a git
+`bite_v1.25.x` has published at `1.25.202` — the `v1.25.2` base, with the same 30
+crates as the 1.24 line. `1.25.201` was the wgpu-publishing release; `1.25.202`
+adds the Windows `open_window` fix below. Upstream 1.25 pins `wgpu` to a git revision, and a git
 dependency has no registry version, so the first tag (`bite_1.25.200`) staged and
 verified but the publish withheld `bite-gp-wgpu` and the four crates that depend on
 it — including the `bite-gpui` facade — and refused to start. The line now pins
@@ -395,3 +397,12 @@ it — including the `bite-gpui` facade — and refused to start. The line now p
 (`default_queue`, the `cleared` argument to `create_texture_from_hal`, and
 `has_srgb_suffix`), charged amendment 1. The rollout record is `bite-tools`'
 `docs/journal/v125x-roll-2026-10-22.md`.
+
+Both lines also carry the fix for
+[#13](https://github.com/bite-gpui/bite-gpui/issues/13): a `WindowsPlatform`
+built with `new(false)` attaches its Direct3D devices when a window is opened
+directly, instead of refusing with `cannot open windows while headless` until
+`run` or `request_windowing` runs. The same commit adds the missing
+`Win32_System_Power` feature, without which `bite-gp-windows` did not compile
+for `x86_64-pc-windows-msvc` outside the workspace — a gap the workspace build
+hid because `gpui_authoring` enables the feature.
