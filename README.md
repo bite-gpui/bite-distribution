@@ -385,3 +385,13 @@ split left flat. The first tag push failed because `SOURCE_WRITE_TOKEN` held onl
 `bite-gpui/bite-gpui`; after it was granted `Contents: Read and write` the whole
 flow was re-run from untagged and `release-branch.yml` pushed the tag itself. The
 rollout record is `bite-tools`' `docs/journal/v124x-roll-2026-10-22.md`.
+
+`bite_v1.25.x` has published at `1.25.201` — the `v1.25.2` base, with the same 30
+crates as the 1.24 line. Upstream 1.25 pins `wgpu` to a git revision, and a git
+dependency has no registry version, so the first tag (`bite_1.25.200`) staged and
+verified but the publish withheld `bite-gp-wgpu` and the four crates that depend on
+it — including the `bite-gpui` facade — and refused to start. The line now pins
+`wgpu = "30.0.1"` and reduces the three call sites only that revision has
+(`default_queue`, the `cleared` argument to `create_texture_from_hal`, and
+`has_srgb_suffix`), charged amendment 1. The rollout record is `bite-tools`'
+`docs/journal/v125x-roll-2026-10-22.md`.
