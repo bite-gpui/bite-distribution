@@ -36,6 +36,15 @@ jobs:
             && echo "read: ok" || echo "read: FAILED"
 
           echo "=== write check (dry run, no ref is created) ==="
+          # A fresh repository: the workspace checkout persists actions-checkout's
+          # own auth header, which would win over the URL credentials and test the
+          # workflow token instead of the secret.
+          rm -rf probe && mkdir probe && cd probe
+          git init -q
+          git config user.email release-check@example.invalid
+          git config user.name release-check
+          echo probe > probe.txt
+          git add probe.txt && git commit -qm probe
           GIT_TERMINAL_PROMPT=0 git push --dry-run \
             "https://x-access-token:${TOKEN}@github.com/bite-gpui/bite-gpui.git" \
             HEAD:refs/heads/token-check-dry-run 2>&1 \
