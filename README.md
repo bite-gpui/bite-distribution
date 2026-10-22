@@ -11,7 +11,7 @@ wherever it is cited — here, in the chapters, and in the comments in
 `targets.toml` and `pipeline/`. Start with [docs/decisions.md](docs/decisions.md),
 where each decision carries its status, including the one with legal weight.
 
-All twelve target branches live in one repository, `bite-gpui/bite-gpui`: ten
+All eighteen target branches live in one repository, `bite-gpui/bite-gpui`: sixteen
 descend from zed releases, `bite_master` from zed's main, and `bite_ce_main`
 from the community edition's fork point. They share an ancestor but have
 diverged, so each target declares its lineage rather than having it inferred
@@ -50,7 +50,7 @@ checks/          what a staged tree must pass, plus one check on the repository
                  sync-release-target-options.yml, actions/verify/ (over preflight,
                  code-checks and build-checks) and actions/build-env/ (the system
                  packages, python, toolchain)
-targets.toml     the twelve target branches, the table the pipeline reads
+targets.toml     the eighteen target branches, the table the pipeline reads
 docs/            the design by chapter: contract (§3–§6), staging (§7–§9),
                  verification (§10), release (§11–§12), decisions (§13)
 DESIGN.md        the index and the map over those chapters
@@ -90,7 +90,7 @@ being released.
 
 | file | what it does |
 | --- | --- |
-| `targets.toml` | the twelve target branches, their lineage, version scheme and URLs |
+| `targets.toml` | the eighteen target branches, their lineage, version scheme and URLs |
 | `pipeline/inventory.py` | resolves the GPUI crates set a checkout reaches by path dependency, and the publish order |
 | `pipeline/naming.py` | source package → published crate name; `--verify` checks it per target |
 | `pipeline/targets.py` | validates and selects targets; `--tags` says what to tag, `--for-tag` and `--for-branch` resolve the other way, `--matrix` and `--env` feed CI |

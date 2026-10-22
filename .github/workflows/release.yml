@@ -67,6 +67,7 @@ on:
           - bite_v1.23.x
           - bite_v1.22.x
           - bite_v1.24.x
+          - bite_v1.25.x
         required: true
       confirm:
         description: 'repeat the target name to confirm a real publish'

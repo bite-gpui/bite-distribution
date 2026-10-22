@@ -293,6 +293,17 @@ version_from = "release-tag"
 upstream = "1.24.4"
 amendment = 0
 
+# Opened 2026-10-22 from the 1.24 tip, replayed onto upstream v1.25.2.
+[[target]]
+name = "bite_v1.25.x"
+repo = "."
+branch = "bite_v1.25.x"
+lineage = "zed"
+roots = ["gpui"]
+version_from = "release-tag"
+upstream = "1.25.2"
+amendment = 0
+
 # Rolling tip. No upstream release tag is reachable from it, so it publishes on
 # the CalVer series instead of borrowing a release number it does not have.
 [[target]]
