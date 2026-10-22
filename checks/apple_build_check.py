@@ -49,7 +49,13 @@ import subprocess
 import sys
 
 # The attribute that keeps the whole thing from running anywhere but macOS.
-HOST_GATE = '#[cfg(target_os = "macos")]'
+# 1.24 widened it to the Apple pair when `gpui_apple` began sharing the Metal
+# backend with iOS; both spellings are stripped, and the crate must carry one.
+HOST_GATES = (
+    '#[cfg(target_os = "macos")]',
+    '#[cfg(any(target_os = "macos", target_os = "ios"))]',
+)
+HOST_GATE = HOST_GATES[0]
 
 # The tail of `run()`: the parts that need `xcrun` or a stitched file. Removed as
 # one block so no attribute is left dangling over the next statement.
@@ -122,13 +128,15 @@ def transform(crate: pathlib.Path) -> str:
     """The crate's build script, rendered runnable on a host that is not macOS."""
     text = (crate / "build.rs").read_text()
 
-    if HOST_GATE not in text:
+    if not any(gate in text for gate in HOST_GATES):
         raise SystemExit(
-            f"{crate}: build.rs has no {HOST_GATE} gate to strip, so its shape has "
-            "changed and this check no longer knows what it is looking at"
+            f"{crate}: build.rs has no host gate to strip "
+            f"({', '.join(HOST_GATES)}), so its shape has changed and this check "
+            "no longer knows what it is looking at"
         )
-    gated = text.count(HOST_GATE)
-    text = text.replace(HOST_GATE, "")
+    gated = sum(text.count(gate) for gate in HOST_GATES)
+    for gate in HOST_GATES:
+        text = text.replace(gate, "")
 
     stripped = COMPILATION.sub("", text, count=1)
     if stripped == text:
@@ -226,7 +234,7 @@ def main(argv: list[str]) -> int:
                 if not script.is_file():
                     continue
                 text = script.read_text()
-                if HOST_GATE in text and "cbindgen" in text:
+                if any(gate in text for gate in HOST_GATES) and "cbindgen" in text:
                     unrecognised.append(name)
             if unrecognised:
                 raise SystemExit(
