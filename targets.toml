@@ -291,7 +291,7 @@ lineage = "zed"
 roots = ["gpui"]
 version_from = "release-tag"
 upstream = "1.24.4"
-amendment = 1
+amendment = 2
 
 # Opened 2026-10-22 from the 1.24 tip, replayed onto upstream v1.25.2.
 [[target]]
