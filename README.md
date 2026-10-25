@@ -376,16 +376,22 @@ that has no Vulkan driver, and an import used only by the headless feature set t
 failed the isolated default-feature build. `bite_1.23.303` and `bite_1.23.304` name
 those intermediate tips and were not published; `bite_1.23.305` is the release.
 
-`bite_v1.24.x` has published at `1.24.401` — the `v1.24.4` base, with the same 30
+`bite_v1.24.x` has published at `1.24.402` — the `v1.24.4` base, with the same 30
 crates as the 1.23 line. `1.24.400` was the first release; `1.24.401` adds the
-Windows `open_window` fix below. Verification (stage, closure checks, packaged artifacts and
-the Apple cbindgen step on Linux) found three source defects in the replayed tree,
-each fixed on the branch: the frame journaling dropped by the Window split, an
-example reaching the entry points through `gpui_platform`, and a test field the
-split left flat. The first tag push failed because `SOURCE_WRITE_TOKEN` held only read access to
-`bite-gpui/bite-gpui`; after it was granted `Contents: Read and write` the whole
-flow was re-run from untagged and `release-branch.yml` pushed the tag itself. The
-rollout record is `bite-tools`' `docs/journal/v124x-roll-2026-10-22.md`.
+Windows `open_window` fix below. `1.24.402` gates the wgpu renderer's dma-buf
+paths on Linux — the fd import, the YUV helper, the surface params buffer and the
+release callbacks — because the engine already cfg-gates its `dmabuf` module and
+the renderer did not: a Windows check of `1.24.401` failed on `std::os::fd`,
+`gpui_engine::YuvMatrix`/`YuvRange` and `crate::dmabuf`. The same gate is on
+`bite_v1.25.x`'s tip for its next release. Verification (stage, closure checks,
+packaged artifacts and the Apple cbindgen step on Linux) found three source
+defects in the replayed tree, each fixed on the branch: the frame journaling
+dropped by the Window split, an example reaching the entry points through
+`gpui_platform`, and a test field the split left flat. The first tag push failed
+because `SOURCE_WRITE_TOKEN` held only read access to `bite-gpui/bite-gpui`;
+after it was granted `Contents: Read and write` the whole flow was re-run from
+untagged and `release-branch.yml` pushed the tag itself. The rollout record is
+`bite-tools`' `docs/journal/v124x-roll-2026-10-22.md`.
 
 `bite_v1.25.x` has published at `1.25.202` — the `v1.25.2` base, with the same 30
 crates as the 1.24 line. `1.25.201` was the wgpu-publishing release; `1.25.202`
