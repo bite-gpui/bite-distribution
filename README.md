@@ -404,6 +404,13 @@ it — including the `bite-gpui` facade — and refused to start. The line now p
 `has_srgb_suffix`), charged amendment 1. The rollout record is `bite-tools`'
 `docs/journal/v125x-roll-2026-10-22.md`.
 
+`bite_v1.25.x` has published again at `1.25.203` — the reported-issue fixes merged
+after `1.25.202`: the Linux dma-buf gate (`9fe4666`), the feature-gated macOS build
+repairs, browser threads opt-in, the wasm cfg and imported-texture fixes, the wasm
+`GpuRenderer` impl, and the button-selectable drag API. `release-branch.yml` tagged
+`ac14881fe5` as `bite_1.25.203`, verification passed, and the publish run completed
+for the 30-crate set.
+
 Both lines also carry the fix for
 [#13](https://github.com/bite-gpui/bite-gpui/issues/13): a `WindowsPlatform`
 built with `new(false)` attaches its Direct3D devices when a window is opened
